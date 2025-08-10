@@ -1,6 +1,18 @@
 -- code bridge neovim plugin
 local M = {}
 
+-- Default configuration
+local config = {
+  tmux = {
+    target_mode = 'window_name',  -- 'window_name', 'current_window', 'find_process'
+    window_name = 'claude',       -- window name to search for when target_mode = 'window_name'
+    process_name = 'claude',      -- process name to search for when target_mode = 'current_window' or 'find_process'
+    switch_to_target = true,      -- whether to switch to the target after sending
+    use_all_buffers = false,      -- include all open buffers as context instead of current file
+    interactive_prompt = false,   -- open prompt editor before sending to tmux
+  }
+}
+
 -- Track the chat buffer and window during the session
 local chat_buffer = nil
 local chat_window = nil
@@ -9,22 +21,328 @@ local running_process = nil
 -- Build context string with filename and range
 local function build_context(opts)
   local context = ''
-  local relative_file = vim.fn.expand('%')
-
-  if relative_file ~= '' then
-    if opts.range == 2 then
-      -- Visual mode - use the range from command
-      context = '@' .. relative_file .. '#L' .. opts.line1 .. '-' .. opts.line2
-    else
-      -- Normal mode - just file name, no line number
-      context = '@' .. relative_file
+  
+  if config.tmux.use_all_buffers then
+    -- Get all loaded buffers that are files
+    local buffers = {}
+    local current_file = vim.fn.expand('%')
+    
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_is_loaded(buf) then
+        local buf_name = vim.api.nvim_buf_get_name(buf)
+        local relative_name = vim.fn.fnamemodify(buf_name, ':~:.')
+        if relative_name ~= '' and not relative_name:match('^term://') and not relative_name:match('^%[') then
+          -- If this is the current file and we have a visual selection, include the range
+          if relative_name == current_file and opts.range == 2 then
+            table.insert(buffers, '@' .. relative_name .. '#L' .. opts.line1 .. '-' .. opts.line2)
+          else
+            table.insert(buffers, '@' .. relative_name)
+          end
+        end
+      end
+    end
+    context = table.concat(buffers, ' ')
+  else
+    -- Original single file context
+    local relative_file = vim.fn.expand('%')
+    if relative_file ~= '' then
+      if opts.range == 2 then
+        -- Visual mode - use the range from command
+        context = '@' .. relative_file .. '#L' .. opts.line1 .. '-' .. opts.line2
+      else
+        -- Normal mode - just file name, no line number
+        context = '@' .. relative_file
+      end
     end
   end
 
   return context
 end
 
--- Send filename and position to tmux claude window (or copy to clipboard if unavailable)
+-- Build git diff context
+local function build_git_diff_context(staged_only)
+  local cmd = staged_only and 'git diff --cached' or 'git diff HEAD'
+  local diff_output = vim.fn.system(cmd .. ' 2>/dev/null')
+  
+  if vim.v.shell_error ~= 0 or diff_output == '' then
+    return nil, staged_only and "no staged changes" or "no git changes found"
+  end
+  
+  -- Add a header to clarify what kind of diff this is
+  local header = staged_only and "# Staged Changes (git diff --cached)\n" or "# Git Changes (git diff HEAD)\n"
+  return header .. diff_output, nil
+end
+
+-- Build recently added files context
+local function build_recent_files_context(limit)
+  limit = limit or 10
+  local files = {}
+  
+  -- Check if we're in a git repository
+  vim.fn.system('git rev-parse --git-dir 2>/dev/null')
+  local in_git_repo = vim.v.shell_error == 0
+  
+  if in_git_repo then
+    -- First, get pending changes (staged and unstaged files)
+    local pending_cmd = 'git diff --name-only HEAD 2>/dev/null'
+    local pending_files = vim.fn.system(pending_cmd)
+    
+    if vim.v.shell_error == 0 and pending_files ~= '' then
+      for line in pending_files:gmatch("[^\n]+") do
+        if line ~= '' and vim.fn.filereadable(line) == 1 then
+          table.insert(files, '@' .. line)
+        end
+      end
+    end
+    
+    -- Then, get recently modified files from git history (if we need more)
+    local remaining = limit - #files
+    if remaining > 0 then
+      local git_cmd = 'git log --name-only --pretty=format: --since="1 week ago" | sort | uniq | head -' .. remaining
+      local git_recent = vim.fn.system(git_cmd .. ' 2>/dev/null')
+      
+      if vim.v.shell_error == 0 and git_recent ~= '' then
+        for line in git_recent:gmatch("[^\n]+") do
+          if line ~= '' and vim.fn.filereadable(line) == 1 then
+            -- Avoid duplicates from pending changes
+            local file_path = '@' .. line
+            local already_added = false
+            for _, existing in ipairs(files) do
+              if existing == file_path then
+                already_added = true
+                break
+              end
+            end
+            if not already_added and #files < limit then
+              table.insert(files, file_path)
+            end
+          end
+        end
+      end
+    end
+  else
+    -- Fallback: use Vim's recent files when not in git repo
+    local vim_recent = vim.v.oldfiles or {}
+    local cwd = vim.fn.getcwd()
+    
+    for _, file_path in ipairs(vim_recent) do
+      if #files >= limit then break end
+      
+      -- Only include files from current working directory and that exist
+      if file_path:sub(1, #cwd) == cwd and vim.fn.filereadable(file_path) == 1 then
+        local relative_path = vim.fn.fnamemodify(file_path, ':~:.')
+        table.insert(files, '@' .. relative_path)
+      end
+    end
+  end
+  
+  if #files == 0 then
+    local context = in_git_repo and "git repository" or "vim session"
+    return nil, "no recent files found in " .. context
+  end
+  
+  local header = in_git_repo and "# Recent Git Files (including pending changes)\n" or "# Recent Vim Files\n"
+  return header .. table.concat(files, ' '), nil
+end
+
+-- Find tmux target based on configuration
+local function find_tmux_target()
+  if config.tmux.target_mode == 'current_window' then
+    -- Find pane with claude process in current window only
+    local panes_info = vim.fn.system('tmux list-panes -F "#{pane_id} #{pane_current_command}" 2>/dev/null')
+    if vim.v.shell_error ~= 0 then
+      return nil, "not in tmux session"
+    end
+    
+    for line in panes_info:gmatch("[^\n]+") do
+      local pane_id, command = line:match("^(%S+)%s*(.*)$")
+      if command and command:match(config.tmux.process_name) then
+        return pane_id, nil
+      end
+    end
+    return nil, "no pane running " .. config.tmux.process_name .. " in current window"
+    
+  elseif config.tmux.target_mode == 'find_process' then
+    -- Find pane with claude process
+    local panes_info = vim.fn.system('tmux list-panes -a -F "#{pane_id} #{pane_current_command}" 2>/dev/null')
+    if vim.v.shell_error ~= 0 then
+      return nil, "not in tmux session"
+    end
+    
+    for line in panes_info:gmatch("[^\n]+") do
+      local pane_id, command = line:match("^(%S+)%s*(.*)$")
+      if command and command:match(config.tmux.process_name) then
+        return pane_id, nil
+      end
+    end
+    return nil, "no pane running " .. config.tmux.process_name
+    
+  else -- 'window_name' (default)
+    -- Check if claude window exists
+    vim.fn.system('tmux list-windows -F "#{window_name}" 2>/dev/null | grep -x ' .. config.tmux.window_name)
+    if vim.v.shell_error == 0 then
+      return config.tmux.window_name, nil
+    else
+      return nil, "no window named '" .. config.tmux.window_name .. "'"
+    end
+  end
+end
+
+-- Create interactive prompt input
+local function create_prompt_input(initial_content, callback)
+  -- Try to use telescope input if available
+  local has_telescope, telescope = pcall(require, 'telescope')
+  
+  if has_telescope then
+    -- Use telescope input
+    vim.ui.input({
+      prompt = 'Claude Prompt: ',
+      default = initial_content,
+      completion = nil,
+    }, function(input)
+      if input and input ~= "" then
+        callback(input)
+      else
+        print("prompt cancelled")
+      end
+    end)
+  else
+    -- Fallback to buffer-based editing
+    -- Create a new buffer for prompt editing
+    vim.cmd('split')
+    vim.cmd('enew')
+    
+    local buf = vim.api.nvim_get_current_buf()
+    local win = vim.api.nvim_get_current_win()
+    
+    -- Set buffer options
+    vim.bo[buf].buftype = 'nofile'
+    vim.bo[buf].bufhidden = 'wipe'
+    vim.bo[buf].swapfile = false
+    vim.bo[buf].filetype = 'text'
+    vim.api.nvim_buf_set_name(buf, 'Claude Prompt Editor')
+    
+    -- Set initial content
+    local lines = vim.split(initial_content, '\n')
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    
+    -- Position cursor at end
+    vim.api.nvim_win_set_cursor(win, {#lines, #lines[#lines]})
+    
+    -- Add instructions at the top
+    local instructions = {
+      "-- Edit your prompt below and press <C-s> to send, <C-c> to cancel --",
+      "-- Context will be sent to Claude via tmux --",
+      "",
+    }
+    vim.api.nvim_buf_set_lines(buf, 0, 0, false, instructions)
+    vim.api.nvim_win_set_cursor(win, {#instructions + #lines, #lines[#lines]})
+    
+    -- Set up keymaps for this buffer
+    local opts = { buffer = buf, silent = true }
+    
+    -- Send prompt
+    vim.keymap.set('n', '<C-s>', function()
+      local content_lines = vim.api.nvim_buf_get_lines(buf, #instructions, -1, false)
+      local final_content = table.concat(content_lines, '\n')
+      vim.api.nvim_win_close(win, false)
+      callback(final_content)
+    end, opts)
+    
+    -- Cancel
+    vim.keymap.set('n', '<C-c>', function()
+      vim.api.nvim_win_close(win, false)
+      print("prompt cancelled")
+    end, opts)
+    
+    -- Also work in insert mode
+    vim.keymap.set('i', '<C-s>', '<Esc><C-s>', opts)
+    vim.keymap.set('i', '<C-c>', '<Esc><C-c>', opts)
+    
+    print("Edit prompt and press <C-s> to send, <C-c> to cancel")
+  end
+end
+
+-- Properly escape message for tmux send-keys
+local function escape_for_tmux(message)
+  -- For multi-line content with special characters, use a different approach
+  -- Write to a temporary file and use tmux load-buffer + paste-buffer
+  local temp_file = vim.fn.tempname()
+  local file = io.open(temp_file, 'w')
+  if file then
+    file:write(message)
+    file:close()
+    return temp_file
+  end
+  return nil
+end
+
+-- Send message to tmux target
+local function send_to_tmux_target(message)
+  -- Check shell error and fallback to clipboard if needed
+  local function check_shell_error(error_message)
+    if vim.v.shell_error == 0 then
+      return false
+    end
+    print(error_message .. ", copied to clipboard")
+    return true
+  end
+
+  -- Always copy to clipboard (helpful in case claude code vim mode is not in insert mode)
+  vim.fn.setreg('+', message)
+
+  -- Check if we're in a tmux session
+  vim.fn.system('tmux display-message -p "#{session_name}" 2>/dev/null')
+  if check_shell_error("no tmux session") then return end
+
+  -- Find tmux target
+  local target, error_msg = find_tmux_target()
+  if not target then
+    print(error_msg .. ", copied to clipboard")
+    return
+  end
+
+  -- For complex content (multi-line, special chars), use tmux buffer approach
+  if message:find('\n') or message:find('[\'"`$\\]') then
+    local temp_file = escape_for_tmux(message)
+    if temp_file then
+      -- Load message into tmux buffer, then paste it
+      local cmd = string.format('tmux load-buffer "%s" \\; paste-buffer -t %s \\; delete-buffer', temp_file, target)
+      vim.fn.system(cmd)
+      
+      -- Clean up temp file
+      vim.fn.delete(temp_file)
+      
+      if check_shell_error("failed to send to " .. target) then return end
+    else
+      print("failed to create temp file, copied to clipboard")
+      return
+    end
+  else
+    -- Simple single-line content can use send-keys
+    vim.fn.system('tmux send-keys -t ' .. target .. ' ' .. vim.fn.shellescape(message) .. ' Enter')
+    if check_shell_error("failed to send to " .. target) then return end
+  end
+
+  -- Switch to target if configured
+  if config.tmux.switch_to_target then
+    local switch_cmd
+    if config.tmux.target_mode == 'window_name' then
+      switch_cmd = 'tmux select-window -t ' .. target
+    else
+      switch_cmd = 'tmux select-pane -t ' .. target
+    end
+    
+    vim.fn.system(switch_cmd)
+    if vim.v.shell_error ~= 0 then
+      print("sent to " .. target .. " but failed to switch - please check manually")
+    end
+  else
+    print("sent message to " .. target)
+  end
+end
+
+-- Send filename and position to tmux claude target (or copy to clipboard if unavailable)
 M.send_to_claude_tmux = function(opts)
   local context = build_context(opts)
 
@@ -33,34 +351,48 @@ M.send_to_claude_tmux = function(opts)
     return
   end
 
-  -- Always copy to clipboard (helpful in case claude code vim mode is not in insert mode)
-  vim.fn.setreg('+', context)
+  if config.tmux.interactive_prompt then
+    -- Open interactive prompt input
+    create_prompt_input(context, send_to_tmux_target)
+  else
+    -- Send directly
+    send_to_tmux_target(context)
+  end
+end
 
-  -- Check shell error and fallback to clipboard if needed
-  local function check_shell_error(message)
-    if vim.v.shell_error == 0 then
-      return false
-    end
-    print(message .. ", copied to clipboard: " .. context)
-    return true
+-- Send git diff to tmux claude target
+M.send_git_diff_to_tmux = function(staged_only)
+  local context, error_msg = build_git_diff_context(staged_only)
+  
+  if not context then
+    print(error_msg)
+    return
   end
 
-  -- Check if we're in a tmux session
-  vim.fn.system('tmux display-message -p "#{session_name}" 2>/dev/null')
-  if check_shell_error("no tmux session") then return end
+  if config.tmux.interactive_prompt then
+    -- Open interactive prompt input
+    create_prompt_input(context, send_to_tmux_target)
+  else
+    -- Send directly
+    send_to_tmux_target(context)
+  end
+end
 
-  -- Check if claude window exists
-  vim.fn.system('tmux list-windows -F "#{window_name}" 2>/dev/null | grep -x claude')
-  if check_shell_error('no claude window') then return end
+-- Send recently added files to tmux claude target
+M.send_recent_files_to_tmux = function(limit)
+  local context, error_msg = build_recent_files_context(limit)
+  
+  if not context then
+    print(error_msg)
+    return
+  end
 
-  -- Send context to claude window
-  vim.fn.system('tmux send-keys -t claude ' .. vim.fn.shellescape(context) .. ' Enter')
-  if check_shell_error("failed to send to claude") then return end
-
-  -- Switch to claude window
-  vim.fn.system('tmux select-window -t claude')
-  if vim.v.shell_error ~= 0 then
-    print("sent to claude but failed to switch window - please check manually")
+  if config.tmux.interactive_prompt then
+    -- Open interactive prompt input
+    create_prompt_input(context, send_to_tmux_target)
+  else
+    -- Send directly
+    send_to_tmux_target(context)
   end
 end
 
@@ -278,8 +610,53 @@ M.cancel_query = function()
 end
 
 -- Setup function for plugin initialization
-M.setup = function()
+M.setup = function(user_config)
+  -- Merge user config with defaults
+  if user_config then
+    config = vim.tbl_deep_extend('force', config, user_config)
+  end
+  
   vim.api.nvim_create_user_command('CodeBridgeTmux', M.send_to_claude_tmux, { range = true })
+  vim.api.nvim_create_user_command('CodeBridgeTmuxAll', function(opts)
+    local original_setting = config.tmux.use_all_buffers
+    config.tmux.use_all_buffers = true
+    M.send_to_claude_tmux(opts)
+    config.tmux.use_all_buffers = original_setting
+  end, { range = true })
+  vim.api.nvim_create_user_command('CodeBridgeTmuxInteractive', function(opts)
+    local original_setting = config.tmux.interactive_prompt
+    config.tmux.interactive_prompt = true
+    M.send_to_claude_tmux(opts)
+    config.tmux.interactive_prompt = original_setting
+  end, { range = true })
+  vim.api.nvim_create_user_command('CodeBridgeTmuxAllInteractive', function(opts)
+    local original_all_buffers = config.tmux.use_all_buffers
+    local original_interactive = config.tmux.interactive_prompt
+    config.tmux.use_all_buffers = true
+    config.tmux.interactive_prompt = true
+    M.send_to_claude_tmux(opts)
+    config.tmux.use_all_buffers = original_all_buffers
+    config.tmux.interactive_prompt = original_interactive
+  end, { range = true })
+  
+  -- Git diff commands
+  vim.api.nvim_create_user_command('CodeBridgeTmuxDiff', function()
+    M.send_git_diff_to_tmux(false)  -- unstaged changes
+  end, {})
+  vim.api.nvim_create_user_command('CodeBridgeTmuxDiffStaged', function()
+    M.send_git_diff_to_tmux(true)   -- staged changes only
+  end, {})
+  
+  -- Recent files commands
+  vim.api.nvim_create_user_command('CodeBridgeTmuxRecent', function()
+    M.send_recent_files_to_tmux(10)  -- default 10 files
+  end, {})
+  vim.api.nvim_create_user_command('CodeBridgeTmuxRecentInteractive', function()
+    local original_setting = config.tmux.interactive_prompt
+    config.tmux.interactive_prompt = true
+    M.send_recent_files_to_tmux(10)
+    config.tmux.interactive_prompt = original_setting
+  end, {})
   vim.api.nvim_create_user_command('CodeBridgeQuery', M.claude_query, { range = true })
   vim.api.nvim_create_user_command('CodeBridgeChat', function(opts)
     opts.args = 'no-context'

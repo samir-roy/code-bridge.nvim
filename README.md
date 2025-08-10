@@ -12,11 +12,14 @@ with a Claude Code session already running in agent mode in another terminal via
 
 ## Features
 
-- **Context Sharing**: Send current file and line ranges to Claude Code
-- **Tmux Integration**: Automatically switch to a tmux "claude" window
+- **Context Sharing**: Send current file, all open buffers, or line ranges to Claude Code
+- **Tmux Integration**: Flexible targeting - window name, current window, or process search
 - **Interactive Chat**: Query Claude Code with persistent chat buffer
+- **Interactive Prompts**: Edit context and add questions before sending (uses Telescope if available)
+- **Git Integration**: Send git diffs and recently changed files as context
+- **Smart Recent Files**: Prioritizes pending changes, falls back to Vim history outside git repos
+- **Visual Mode Support**: Send selected line ranges as context (works with all-buffers mode too)
 - **Fallback Support**: Copies context to clipboard when tmux is unavailable
-- **Visual Mode Support**: Send selected line ranges as context
 
 ## Requirements
 
@@ -32,7 +35,14 @@ with a Claude Code session already running in agent mode in another terminal via
 {
   "samir-roy/code-bridge.nvim",
   config = function()
-    require('code-bridge').setup()
+    require('code-bridge').setup({
+      tmux = {
+        target_mode = 'current_window',  -- 'window_name', 'current_window', 'find_process'
+        window_name = 'claude',          -- used when target_mode = 'window_name'
+        process_name = 'claude',         -- used when target_mode = 'current_window' or 'find_process'
+        switch_to_target = true,         -- whether to switch to target after sending
+      }
+    })
   end
 }
 ```
@@ -62,24 +72,79 @@ require('code-bridge').setup()
 
 ## Usage
 
-The plugin provides the following main commands:
+The plugin provides extensive commands for different workflows:
 
-### `:CodeBridgeTmux`
+### Basic File Context Commands
 
-Sends the current file context to a tmux window named "claude". Works in both normal and visual mode. In case tmux
-is not available or there is no window named "claude", the context is copied to the system clipboard.
+#### `:CodeBridgeTmux`
+Send current file context to Claude via tmux. Works in normal and visual mode.
 
 ```vim
-" Send current file context
 :CodeBridgeTmux
+:'<,'>CodeBridgeTmux  " with visual selection
+```
 
-" Send selected lines (in visual mode)
-:'<,'>CodeBridgeTmux
+#### `:CodeBridgeTmuxAll`
+Send all open buffers as context. In visual mode, includes your selection from current file plus all other buffers.
+
+```vim
+:CodeBridgeTmuxAll
+:'<,'>CodeBridgeTmuxAll  " selection + all buffers
+```
+
+#### `:CodeBridgeTmuxInteractive`
+Edit the context prompt before sending (uses Telescope input if available).
+
+```vim
+:CodeBridgeTmuxInteractive
+```
+
+#### `:CodeBridgeTmuxAllInteractive`
+Edit all-buffers context prompt before sending.
+
+```vim
+:CodeBridgeTmuxAllInteractive
 ```
 
 **Context Format:**
 - Normal mode: `@filename.ext`
 - Visual mode: `@filename.ext#L1-5`
+- All buffers: `@file1.lua @file2.js @file3.py`
+- All buffers + selection: `@main.lua#L10-20 @utils.js @config.py`
+
+### Git Integration Commands
+
+#### `:CodeBridgeTmuxDiff`
+Send current git changes (unstaged) to Claude.
+
+```vim
+:CodeBridgeTmuxDiff
+```
+
+#### `:CodeBridgeTmuxDiffStaged`
+Send staged changes only to Claude.
+
+```vim
+:CodeBridgeTmuxDiffStaged
+```
+
+### Recent Files Commands
+
+#### `:CodeBridgeTmuxRecent`
+Send recently modified files. In git repos: prioritizes pending changes + recent commits. Outside git: uses Vim's recent files.
+
+```vim
+:CodeBridgeTmuxRecent
+```
+
+#### `:CodeBridgeTmuxRecentInteractive`
+Edit recent files context before sending.
+
+```vim
+:CodeBridgeTmuxRecentInteractive
+```
+
+### Chat Interface Commands
 
 ### `:CodeBridgeQuery`
 
@@ -159,17 +224,29 @@ tmux send-keys -t coding:claude 'claude' Enter
 
 The plugin will:
 1. Check if you're in a tmux session
-2. Look for a window named "claude"
-3. Send the context and switch to that window
-4. Fall back to clipboard if tmux is unavailable
+2. Find the claude target based on your configuration:
+   - **window_name**: Look for a window named "claude"
+   - **current_window**: Search for claude process in current window only
+   - **find_process**: Search all panes across all windows for claude process
+3. Send the context and optionally switch to the target
+4. Fall back to clipboard if tmux is unavailable or target not found
 
 ## Key Bindings (Optional)
 
 Add these to your configuration for quick access:
 
 ```lua
-vim.keymap.set("n", "<leader>ct", ":CodeBridgeTmux<CR>", { desc = "Send context to claude via tmux" })
-vim.keymap.set("v", "<leader>ct", ":CodeBridgeTmux<CR>", { desc = "Send selection to claude via tmux" })
+-- Basic tmux commands
+vim.keymap.set("n", "<leader>ct", ":CodeBridgeTmux<CR>", { desc = "Send file to claude" })
+vim.keymap.set("v", "<leader>ct", ":CodeBridgeTmux<CR>", { desc = "Send selection to claude" })
+vim.keymap.set("n", "<leader>ca", ":CodeBridgeTmuxAll<CR>", { desc = "Send all buffers to claude" })
+vim.keymap.set("n", "<leader>ci", ":CodeBridgeTmuxInteractive<CR>", { desc = "Interactive prompt to claude" })
+
+-- Git integration
+vim.keymap.set("n", "<leader>cd", ":CodeBridgeTmuxDiff<CR>", { desc = "Send git diff to claude" })
+vim.keymap.set("n", "<leader>cr", ":CodeBridgeTmuxRecent<CR>", { desc = "Send recent files to claude" })
+
+-- Chat interface
 vim.keymap.set("n", "<leader>cq", ":CodeBridgeQuery<CR>", { desc = "Query claude with context" })
 vim.keymap.set("v", "<leader>cq", ":CodeBridgeQuery<CR>", { desc = "Query claude with selection" })
 vim.keymap.set("n", "<leader>cc", ":CodeBridgeChat<CR>", { desc = "Chat with claude" })
@@ -179,14 +256,109 @@ vim.keymap.set("n", "<leader>cx", ":CodeBridgeWipe<CR>", { desc = "Wipe chat and
 vim.keymap.set("n", "<leader>ck", ":CodeBridgeCancelQuery<CR>", { desc = "Cancel running query" })
 ```
 
-## Example Workflow
+## Configuration
 
+The plugin can be configured with various tmux targeting modes:
+
+### Target Modes
+
+**`'window_name'` (default)**: Search for a tmux window by name
+```lua
+require('code-bridge').setup({
+  tmux = {
+    target_mode = 'window_name',
+    window_name = 'claude',  -- window name to search for
+  }
+})
+```
+
+**`'current_window'`**: Search for claude process in the current tmux window
+```lua
+require('code-bridge').setup({
+  tmux = {
+    target_mode = 'current_window',
+    process_name = 'claude',
+    switch_to_target = true,  -- switch to claude pane after sending
+  }
+})
+```
+
+**`'find_process'`**: Find any pane running a claude process
+```lua
+require('code-bridge').setup({
+  tmux = {
+    target_mode = 'find_process',
+    process_name = 'claude',  -- process name to search for
+  }
+})
+```
+
+### Configuration Options
+
+**Tmux Integration:**
+- `target_mode`: How to find claude (`'window_name'`, `'current_window'`, `'find_process'`)
+- `window_name`: Window name to search for when using `'window_name'` mode (default: `'claude'`)
+- `process_name`: Process name to search for when using `'current_window'` or `'find_process'` mode (default: `'claude'`)
+- `switch_to_target`: Whether to switch to the target after sending context (default: `true`)
+
+**Context Options:**
+- `use_all_buffers`: Include all open buffers as context instead of current file (default: `false`)
+- `interactive_prompt`: Open prompt editor before sending to tmux (default: `false`)
+
+**Full Configuration Example:**
+```lua
+require('code-bridge').setup({
+  tmux = {
+    target_mode = 'current_window',
+    process_name = 'claude',
+    switch_to_target = true,
+    use_all_buffers = false,      -- can be toggled per command
+    interactive_prompt = false,   -- can be toggled per command
+  }
+})
+```
+
+## Example Workflows
+
+### Code Review Workflow
+1. Make changes to your code
+2. Run `:CodeBridgeTmuxDiff` to send git changes to Claude
+3. Claude analyzes your changes and provides feedback
+
+### Multi-file Analysis
+1. Open several related files in Neovim
+2. Select important code in current file (visual mode)
+3. Run `:CodeBridgeTmuxAllInteractive`
+4. Add question like "How do these components work together?"
+5. Claude gets context from all files plus your selection
+
+### Recent Work Context
+1. Working on a project over time
+2. Run `:CodeBridgeTmuxRecent` to send recent changes
+3. Ask "What has been worked on recently?" or "Summarize recent changes"
+
+### Interactive Chat Workflow
 1. Open a file in Neovim
 2. Select some lines in visual mode
 3. Run `:CodeBridgeQuery`
 4. Type your question about the selected code
 5. View Claude's response in the chat buffer
 6. Continue the conversation with follow-up queries
+
+## Command Summary
+
+| Command | Purpose | Context |
+|---------|---------|----------|
+| `:CodeBridgeTmux` | Basic file sending | Current file/selection |
+| `:CodeBridgeTmuxAll` | Multi-file analysis | All open buffers |
+| `:CodeBridgeTmuxInteractive` | Edit prompt first | Current file + your question |
+| `:CodeBridgeTmuxAllInteractive` | Edit multi-file prompt | All buffers + your question |
+| `:CodeBridgeTmuxDiff` | Code review | Git changes (unstaged) |
+| `:CodeBridgeTmuxDiffStaged` | Staged review | Git changes (staged) |
+| `:CodeBridgeTmuxRecent` | Recent context | Recent files + pending changes |
+| `:CodeBridgeTmuxRecentInteractive` | Edit recent context | Recent files + your question |
+| `:CodeBridgeQuery` | Interactive chat | File context + chat UI |
+| `:CodeBridgeChat` | Simple chat | Chat UI only |
 
 ## License
 
