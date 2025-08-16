@@ -21,17 +21,19 @@ local running_process = nil
 
 -- Build context string with filename and range
 local function build_context(opts)
-  local context = ''
-
   if opts.use_all_buffers then
     -- Get all loaded buffers that are files
     local buffers = {}
     local current_file = vim.fn.expand('%')
     for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-      if vim.api.nvim_buf_is_loaded(buf) then
+      if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].buflisted then
         local buf_name = vim.api.nvim_buf_get_name(buf)
         local relative_name = vim.fn.fnamemodify(buf_name, ':~:.')
-        if relative_name ~= '' and not relative_name:match('^term://') and not relative_name:match('^%[') then
+        if relative_name ~= '' and
+            vim.fn.filereadable(buf_name) == 1 and
+            not relative_name:match('^term://') and
+            not relative_name:match('^%[')
+        then
           -- If this is the current file and we have a visual selection, include the range
           if relative_name == current_file and opts.range == 2 then
             table.insert(buffers, '@' .. relative_name .. '#L' .. opts.line1 .. '-' .. opts.line2)
@@ -41,22 +43,21 @@ local function build_context(opts)
         end
       end
     end
-    context = table.concat(buffers, ' ')
+    return table.concat(buffers, ' ')
   else
     -- Single file context
     local relative_file = vim.fn.expand('%')
     if relative_file ~= '' then
       if opts.range == 2 then
         -- Visual mode - use the range from command
-        context = '@' .. relative_file .. '#L' .. opts.line1 .. '-' .. opts.line2
+        return '@' .. relative_file .. '#L' .. opts.line1 .. '-' .. opts.line2
       else
         -- Normal mode - just file name, no line number
-        context = '@' .. relative_file
+        return '@' .. relative_file
       end
     end
   end
-
-  return context
+  return ''
 end
 
 -- Build git diff context
@@ -127,7 +128,6 @@ local function build_recent_files_context(limit)
 
     for _, file_path in ipairs(vim_recent) do
       if #files >= limit then break end
-
       -- Only include files from current working directory and that exist
       if file_path:sub(1, #cwd) == cwd and vim.fn.filereadable(file_path) == 1 then
         local relative_path = vim.fn.fnamemodify(file_path, ':~:.')
@@ -190,7 +190,6 @@ end
 local function create_prompt_input(initial_content, callback)
   -- Check if telescope is available
   local has_telescope, telescope = pcall(require, 'telescope')
-
   if config.interactive.use_telescope and has_telescope then
     -- Use telescope input
     vim.ui.input({
@@ -233,6 +232,7 @@ local function create_prompt_input(initial_content, callback)
     vim.bo[buf].swapfile = false
     vim.bo[buf].filetype = 'text'
     vim.api.nvim_buf_set_name(buf, 'Prompt Editor')
+    vim.b[buf].is_code_bridge_buffer = true
 
     -- Set initial content
     local lines = vim.split(initial_content, '\n')
@@ -251,7 +251,7 @@ local function create_prompt_input(initial_content, callback)
     vim.api.nvim_win_set_cursor(win, { #instructions + #lines, #lines[#lines] })
 
     -- Set up keymaps for this buffer
-    local opts = { buffer = buf, silent = true }
+    local opts = { buffer = buf, silent = true, nowait = true }
 
     local send_prompt = function()
       local content_lines = vim.api.nvim_buf_get_lines(buf, #instructions, -1, false)
@@ -273,8 +273,6 @@ local function create_prompt_input(initial_content, callback)
     -- Also work in insert mode
     vim.keymap.set('i', '<C-s>', '<Esc><C-s>', opts)
     vim.keymap.set('i', '<C-c>', '<Esc><C-c>', opts)
-
-    print("Edit prompt and press <C-s> to send, <C-c> to cancel")
   end
 end
 
@@ -323,10 +321,8 @@ local function send_to_tmux_target(message)
       -- Load message into tmux buffer, then paste it
       local cmd = string.format('tmux load-buffer "%s" \\; paste-buffer -t %s \\; delete-buffer', temp_file, target)
       vim.fn.system(cmd)
-
       -- Clean up temp file
       vim.fn.delete(temp_file)
-
       if check_shell_error("failed to send to " .. target) then return end
     else
       print("failed to create temp file, copied to clipboard")
@@ -346,7 +342,6 @@ local function send_to_tmux_target(message)
     else
       switch_cmd = 'tmux select-pane -t ' .. target
     end
-
     vim.fn.system(switch_cmd)
     if vim.v.shell_error ~= 0 then
       print("sent to " .. target .. " but failed to switch - please check manually")
@@ -356,62 +351,45 @@ local function send_to_tmux_target(message)
   end
 end
 
+local function send_to_tmux_wrapper(opts, context, error_msg)
+  if vim.b.is_code_bridge_buffer == true then
+    print("not available in prompt editor")
+    return
+  end
+  if not context or context == '' then
+    print(error_msg)
+  elseif opts.interactive_prompt then
+    create_prompt_input(context, send_to_tmux_target)
+  else
+    send_to_tmux_target(context)
+  end
+end
+
 -- Send filename and position to tmux claude target (or copy to clipboard if unavailable)
 M.send_to_claude_tmux = function(opts)
   local context = build_context(opts)
-
-  if context == '' then
-    print("no file context available")
-    return
-  end
-
-  if opts.interactive_prompt then
-    -- Open interactive prompt input
-    create_prompt_input(context, send_to_tmux_target)
-  else
-    -- Send directly
-    send_to_tmux_target(context)
-  end
+  send_to_tmux_wrapper(opts, context, "no file context available")
 end
 
 -- Send git diff to tmux claude target
 M.send_git_diff_to_tmux = function(opts)
   local context, error_msg = build_git_diff_context(opts.staged_only)
-
-  if not context then
-    print(error_msg)
-    return
-  end
-
-  if opts.interactive_prompt then
-    -- Open interactive prompt input
-    create_prompt_input(context, send_to_tmux_target)
-  else
-    -- Send directly
-    send_to_tmux_target(context)
-  end
+  send_to_tmux_wrapper(opts, context, error_msg)
 end
 
 -- Send recently added files to tmux claude target
 M.send_recent_files_to_tmux = function(opts)
   local context, error_msg = build_recent_files_context(opts.max_recent_files)
-
-  if not context then
-    print(error_msg)
-    return
-  end
-
-  if opts.interactive_prompt then
-    -- Open interactive prompt input
-    create_prompt_input(context, send_to_tmux_target)
-  else
-    -- Send directly
-    send_to_tmux_target(context)
-  end
+  send_to_tmux_wrapper(opts, context, error_msg)
 end
 
 -- Query Claude Code using its CLI option and show results in chat pane
 M.claude_query = function(opts)
+  if vim.b.is_code_bridge_buffer == true then
+    print("not available in prompt editor")
+    return
+  end
+
   local include_context = opts.args ~= 'no-context'
   local context = include_context and build_context(opts) or ''
   local thinking_message = '## Thinking...'
