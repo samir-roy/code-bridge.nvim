@@ -71,6 +71,32 @@ COMMANDS                                                  *code-bridge-commands*
                             4. Sends context and switches to claude window
                             5. Falls back to clipboard if tmux unavailable
 
+                                                          *:CodeBridgeTmuxAll*
+:CodeBridgeTmuxAll          Send all open buffers as context. In visual mode, 
+                            includes your selection from current file plus all 
+                            other buffers.
+
+                                                          *:CodeBridgeTmuxInteractive*
+:CodeBridgeTmuxInteractive  Edit the context prompt before sending. Uses 
+                            Telescope input if available.
+
+                                                          *:CodeBridgeTmuxAllInteractive*
+:CodeBridgeTmuxAllInteractive Edit all-buffers context prompt before sending.
+
+                                                          *:CodeBridgeTmuxDiff*
+:CodeBridgeTmuxDiff         Send current git changes (unstaged) to the agent.
+
+                                                          *:CodeBridgeTmuxDiffStaged*
+:CodeBridgeTmuxDiffStaged   Send staged changes only to the agent.
+
+                                                          *:CodeBridgeTmuxRecent*
+:CodeBridgeTmuxRecent       Send recently modified files. In git repos: 
+                            prioritizes pending changes + recent commits. 
+                            Outside git: uses Vim's recent files.
+
+                                                          *:CodeBridgeTmuxRecentInteractive*
+:CodeBridgeTmuxRecentInteractive Edit recent files context before sending.
+
                                                           *:CodeBridgeQuery*
 :CodeBridgeQuery            Open interactive chat with Claude Code, including
                             file context. Creates a persistent markdown buffer
@@ -111,11 +137,51 @@ CONFIGURATION                                        *code-bridge-configuration*
 
 The plugin works out of the box with no configuration required. 
 
+Configuration options: >
+    require('code-bridge').setup({
+      tmux = {
+        target_mode = 'window_name',     -- 'window_name', 'current_window', 'find_process'
+        window_name = 'claude',          -- used when target_mode = 'window_name'
+        process_name = 'claude',         -- used when target_mode = 'current_window' or 'find_process'
+        switch_to_target = true,         -- whether to switch to target after sending
+      },
+      interactive = {
+        use_telescope = true,            -- use telescope for interactive prompts (default: true)
+      }
+    })
+<
+
+target_mode options:
+- 'window_name' (default): Search for a tmux window by name
+- 'current_window': Search for claude process in the current tmux window  
+- 'find_process': Find any pane running a claude process
+
+window_name: Window name to search for when using 'window_name' mode (default: 'claude')
+
+process_name: Process name to search for when using 'current_window' or 'find_process' mode (default: 'claude')
+
+switch_to_target: Whether to switch to the target after sending context (default: true)
+
+use_telescope: Use Telescope for interactive prompts when available (default: true)
+
 Optional key bindings: >
+    -- Basic tmux commands
     vim.keymap.set("n", "<leader>ct", ":CodeBridgeTmux<CR>", 
-                   { desc = "Send context to claude via tmux" })
+                   { desc = "Send file to claude" })
     vim.keymap.set("v", "<leader>ct", ":CodeBridgeTmux<CR>", 
-                   { desc = "Send selection to claude via tmux" })
+                   { desc = "Send selection to claude" })
+    vim.keymap.set("n", "<leader>ca", ":CodeBridgeTmuxAll<CR>", 
+                   { desc = "Send all buffers to claude" })
+
+    -- Advanced tmux commands
+    vim.keymap.set("n", "<leader>ci", ":CodeBridgeTmuxInteractive<CR>", 
+                   { desc = "Interactive prompt to claude" })
+    vim.keymap.set("n", "<leader>cd", ":CodeBridgeTmuxDiff<CR>", 
+                   { desc = "Send git diff to claude" })
+    vim.keymap.set("n", "<leader>cr", ":CodeBridgeTmuxRecent<CR>", 
+                   { desc = "Send recent files to claude" })
+
+    -- Chat interface
     vim.keymap.set("n", "<leader>cq", ":CodeBridgeQuery<CR>", 
                    { desc = "Query claude with context" })
     vim.keymap.set("v", "<leader>cq", ":CodeBridgeQuery<CR>", 
@@ -127,7 +193,7 @@ Optional key bindings: >
     vim.keymap.set("n", "<leader>cs", ":CodeBridgeShow<CR>", 
                    { desc = "Show chat window" })
     vim.keymap.set("n", "<leader>cx", ":CodeBridgeWipe<CR>", 
-                   { desc = "Clear history and close chat" })
+                   { desc = "Wipe chat and clear history" })
     vim.keymap.set("n", "<leader>ck", ":CodeBridgeCancelQuery<CR>", 
                    { desc = "Cancel running query" })
 <

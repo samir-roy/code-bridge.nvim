@@ -1,8 +1,9 @@
 # code-bridge.nvim
 
-A Neovim plugin that provides seamless integration between Neovim and Claude Code, allowing you to
-send file context and queries directly to Claude Code from within your Neovim either via CLI or tmux.
-Messages can be sent to the agent in another tmux terminal or to a chat buffer split within Neovim.
+A Neovim plugin that provides seamless integration between Neovim and Claude Code or other similar terminal
+based coding agent like OpenCode, allowing you to send file context and queries directly to the agent from 
+within your Neovim either via CLI or tmux. Messages can be sent to the agent in another tmux terminal or to
+a chat buffer split within Neovim.
 
 The goal of this plugin is not to provide the full IDE experience that Claude Code offers. This plugin
 aims to make it easy to chat with claude code without running a terminal inside Neovim, and to interact
@@ -17,8 +18,7 @@ with a Claude Code session already running in agent mode in another terminal via
 - **Interactive Chat**: Query Claude Code with persistent chat buffer
 - **Interactive Prompts**: Edit context and add questions before sending (uses Telescope if available)
 - **Git Integration**: Send git diffs and recently changed files as context
-- **Smart Recent Files**: Prioritizes pending changes, falls back to Vim history outside git repos
-- **Visual Mode Support**: Send selected line ranges as context (works with all-buffers mode too)
+- **Visual Mode Support**: Send selected line ranges as context
 - **Fallback Support**: Copies context to clipboard when tmux is unavailable
 
 ## Requirements
@@ -37,10 +37,13 @@ with a Claude Code session already running in agent mode in another terminal via
   config = function()
     require('code-bridge').setup({
       tmux = {
-        target_mode = 'window_name',  -- 'window_name', 'current_window', 'find_process'
+        target_mode = 'window_name',     -- 'window_name', 'current_window', 'find_process'
         window_name = 'claude',          -- used when target_mode = 'window_name'
         process_name = 'claude',         -- used when target_mode = 'current_window' or 'find_process'
         switch_to_target = true,         -- whether to switch to target after sending
+      },
+      interactive = {
+        use_telescope = true,            -- use telescope for interactive prompts (default: true)
       }
     })
   end
@@ -77,7 +80,7 @@ The plugin provides extensive commands for different workflows:
 ### Basic File Context Commands
 
 #### `:CodeBridgeTmux`
-Send current file context to Claude via tmux. Works in normal and visual mode.
+Send current file context to the agent via tmux. Works in normal and visual mode.
 
 ```vim
 :CodeBridgeTmux
@@ -87,125 +90,59 @@ Send current file context to Claude via tmux. Works in normal and visual mode.
 #### `:CodeBridgeTmuxAll`
 Send all open buffers as context. In visual mode, includes your selection from current file plus all other buffers.
 
-```vim
-:CodeBridgeTmuxAll
-:'<,'>CodeBridgeTmuxAll  " selection + all buffers
-```
+**Context Format:**
+- Normal mode: `@filename.ext`
+- Visual mode: `@filename.ext#L1-5`
+
+### Advanced File Context Commands
 
 #### `:CodeBridgeTmuxInteractive`
 Edit the context prompt before sending (uses Telescope input if available).
 
-```vim
-:CodeBridgeTmuxInteractive
-```
-
 #### `:CodeBridgeTmuxAllInteractive`
 Edit all-buffers context prompt before sending.
 
-```vim
-:CodeBridgeTmuxAllInteractive
-```
-
-**Context Format:**
-- Normal mode: `@filename.ext`
-- Visual mode: `@filename.ext#L1-5`
-- All buffers: `@file1.lua @file2.js @file3.py`
-- All buffers + selection: `@main.lua#L10-20 @utils.js @config.py`
-
-### Git Integration Commands
-
 #### `:CodeBridgeTmuxDiff`
-Send current git changes (unstaged) to Claude.
-
-```vim
-:CodeBridgeTmuxDiff
-```
+Send current git changes (unstaged) to the agent.
 
 #### `:CodeBridgeTmuxDiffStaged`
-Send staged changes only to Claude.
-
-```vim
-:CodeBridgeTmuxDiffStaged
-```
-
-### Recent Files Commands
+Send staged changes only to the agent.
 
 #### `:CodeBridgeTmuxRecent`
 Send recently modified files. In git repos: prioritizes pending changes + recent commits. Outside git: uses Vim's recent files.
 
-```vim
-:CodeBridgeTmuxRecent
-```
-
 #### `:CodeBridgeTmuxRecentInteractive`
 Edit recent files context before sending.
 
-```vim
-:CodeBridgeTmuxRecentInteractive
-```
-
 ### Chat Interface Commands
 
-### `:CodeBridgeQuery`
+#### `:CodeBridgeQuery`
 
-Opens an interactive chat with Claude Code inside Neovim itself. A persistent markdown buffer for the conversation
-is opened in a split pane. Your message along with the file context is sent to Claude Code and the response is
+Opens an interactive chat with the coding agent inside Neovim itself. A persistent markdown buffer for the conversation
+is opened in a split pane. Your message along with the file context is sent to the agent and the response is
 shown in the conversation buffer. Subsequent messages are part of the same chat thread as long as the chat pane
 is kept open. Closing the pane clears the chat history.
 
-```vim
-" Query with file context
-:CodeBridgeQuery
-
-" Query with selected lines as context
-:'<,'>CodeBridgeQuery
-```
-
-### `:CodeBridgeChat`
+#### `:CodeBridgeChat`
 
 Similar to `:CodeBridgeQuery` but without file context - useful for general questions.
 
-```vim
-" Chat without file context
-:CodeBridgeChat
-```
-
-### `:CodeBridgeHide`
+#### `:CodeBridgeHide`
 
 Hides the chat buffer window without clearing the chat history. The chat buffer remains in memory and can be reopened
 with the next query or with the show command.
 
-```vim
-" Hide chat window
-:CodeBridgeHide
-```
-
-### `:CodeBridgeShow`
+#### `:CodeBridgeShow`
 
 Shows the chat buffer window if it exists but is hidden.
 
-```vim
-" Show chat window
-:CodeBridgeShow
-```
-
-### `:CodeBridgeWipe`
+#### `:CodeBridgeWipe`
 
 Clears the chat history and closes the chat. This also cancels any running queries.
 
-```vim
-" Wipe chat and clear history
-:CodeBridgeWipe
-```
+#### `:CodeBridgeCancelQuery`
 
-### `:CodeBridgeCancelQuery`
-
-Cancels any currently running Claude Code query.
-
-```vim
-" Cancel running query
-:CodeBridgeCancelQuery
-```
+Cancels any currently running query.
 
 ## Tmux Integration (Optional)
 
@@ -240,9 +177,9 @@ Add these to your configuration for quick access:
 vim.keymap.set("n", "<leader>ct", ":CodeBridgeTmux<CR>", { desc = "Send file to claude" })
 vim.keymap.set("v", "<leader>ct", ":CodeBridgeTmux<CR>", { desc = "Send selection to claude" })
 vim.keymap.set("n", "<leader>ca", ":CodeBridgeTmuxAll<CR>", { desc = "Send all buffers to claude" })
-vim.keymap.set("n", "<leader>ci", ":CodeBridgeTmuxInteractive<CR>", { desc = "Interactive prompt to claude" })
 
--- Git integration
+-- Advanced tmux commands
+vim.keymap.set("n", "<leader>ci", ":CodeBridgeTmuxInteractive<CR>", { desc = "Interactive prompt to claude" })
 vim.keymap.set("n", "<leader>cd", ":CodeBridgeTmuxDiff<CR>", { desc = "Send git diff to claude" })
 vim.keymap.set("n", "<leader>cr", ":CodeBridgeTmuxRecent<CR>", { desc = "Send recent files to claude" })
 
@@ -258,9 +195,17 @@ vim.keymap.set("n", "<leader>ck", ":CodeBridgeCancelQuery<CR>", { desc = "Cancel
 
 ## Configuration
 
-The plugin can be configured with various tmux targeting modes:
+The plugin works out of the box with no configuration required. The following options are available:
 
-### Target Modes
+- `target_mode`: How to find claude (`'window_name'`, `'current_window'`, `'find_process'`)
+- `window_name`: Window name to search for when using `'window_name'` mode (default: `'claude'`)
+- `process_name`: Process name to search for when using `'current_window'` or `'find_process'` mode (default: `'claude'`)
+- `switch_to_target`: Whether to switch to the target after sending context (default: `true`)
+- `use_telescope`: Use Telescope for interactive prompts when available (default: `true`)
+
+### Examples
+
+The plugin can be configured with various tmux targeting modes:
 
 **`'window_name'` (default)**: Search for a tmux window by name
 ```lua
@@ -268,6 +213,9 @@ require('code-bridge').setup({
   tmux = {
     target_mode = 'window_name',
     window_name = 'claude',  -- window name to search for
+  },
+  interactive = {
+    use_telescope = true,    -- use telescope for interactive prompts
   }
 })
 ```
@@ -293,32 +241,15 @@ require('code-bridge').setup({
 })
 ```
 
-### Configuration Options
-
-**Tmux Integration:**
-- `target_mode`: How to find claude (`'window_name'`, `'current_window'`, `'find_process'`)
-- `window_name`: Window name to search for when using `'window_name'` mode (default: `'claude'`)
-- `process_name`: Process name to search for when using `'current_window'` or `'find_process'` mode (default: `'claude'`)
-- `switch_to_target`: Whether to switch to the target after sending context (default: `true`)
-
-**Context Options:**
-- `use_all_buffers`: Include all open buffers as context instead of current file (default: `false`)
-- `interactive_prompt`: Open prompt editor before sending to tmux (default: `false`)
-
-**Full Configuration Example:**
-```lua
-require('code-bridge').setup({
-  tmux = {
-    target_mode = 'current_window',
-    process_name = 'claude',
-    switch_to_target = true,
-    use_all_buffers = false,      -- can be toggled per command
-    interactive_prompt = false,   -- can be toggled per command
-  }
-})
-```
-
 ## Example Workflows
+
+### Interactive Chat Workflow
+1. Open a file in Neovim
+2. Select some lines in visual mode
+3. Run `:CodeBridgeQuery`
+4. Type your question about the selected code
+5. View Claude's response in the chat buffer
+6. Continue the conversation with follow-up queries
 
 ### Code Review Workflow
 1. Make changes to your code
@@ -335,17 +266,9 @@ require('code-bridge').setup({
 ### Recent Work Context
 1. Working on a project over time
 2. Run `:CodeBridgeTmuxRecent` to send recent changes
-3. Ask "What has been worked on recently?" or "Summarize recent changes"
+3. Ask your question like "Summarize recent changes"
 
-### Interactive Chat Workflow
-1. Open a file in Neovim
-2. Select some lines in visual mode
-3. Run `:CodeBridgeQuery`
-4. Type your question about the selected code
-5. View Claude's response in the chat buffer
-6. Continue the conversation with follow-up queries
-
-## Command Summary
+## Command Context Summary
 
 | Command | Purpose | Context |
 |---------|---------|----------|
