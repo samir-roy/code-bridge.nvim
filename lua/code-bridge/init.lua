@@ -145,6 +145,72 @@ local function build_recent_files_context(limit)
   return header .. table.concat(files, ' '), nil
 end
 
+-- Check if a tmux pane is running claude process
+local function is_claude_process(pane_id)
+  -- Get the full command line of the process in the pane
+  local cmd = vim.fn.system('tmux display -p -t ' .. pane_id .. ' "#{pane_pid}" 2>/dev/null')
+  if vim.v.shell_error ~= 0 then
+    return false
+  end
+
+  local pid = cmd:gsub("%s+", "")
+  if not pid or pid == "" then
+    return false
+  end
+
+  -- Find child processes of the pane's main process (usually shell)
+  local children_cmd = 'pgrep -P ' .. pid .. ' 2>/dev/null'
+  local children = vim.fn.system(children_cmd)
+  if vim.v.shell_error ~= 0 then
+    return false
+  end
+
+  -- Check each child process
+  for child_pid in children:gmatch("%d+") do
+    local ps_cmd = 'ps -p ' .. child_pid .. ' -o args= 2>/dev/null'
+    local args = vim.fn.system(ps_cmd)
+    if vim.v.shell_error == 0 then
+      if args:match(config.tmux.process_name) then
+        return true
+      end
+    end
+  end
+
+  -- Fallback: check the parent process itself
+  local parent_ps_cmd = 'ps -p ' .. pid .. ' -o args= 2>/dev/null'
+  local parent_args = vim.fn.system(parent_ps_cmd)
+  if vim.v.shell_error == 0 then
+    if parent_args:match(config.tmux.process_name) then
+      return true
+    end
+  end
+
+  return false
+end
+
+-- Find pane running process in given panes info
+local function find_pane_with_process(panes_info)
+  -- Look for exact process name match
+  for line in panes_info:gmatch("[^\n]+") do
+    local pane_id, command = line:match("^(%S+)%s*(.*)$")
+    if command and command:match(config.tmux.process_name) then
+      return pane_id
+    end
+  end
+
+  -- If find_node_process is enabled, look for node process with matching name
+  if config.tmux.find_node_process then
+    for line in panes_info:gmatch("[^\n]+") do
+      local pane_id, command = line:match("^(%S+)%s*(.*)$")
+      if command and command == "node" and is_claude_process(pane_id) then
+        return pane_id
+      end
+    end
+  end
+
+  return nil
+end
+
 -- Find tmux target based on configuration
 local function find_tmux_target()
   if config.tmux.target_mode == 'current_window' then
@@ -154,12 +220,11 @@ local function find_tmux_target()
       return nil, "not in tmux session"
     end
 
-    for line in panes_info:gmatch("[^\n]+") do
-      local pane_id, command = line:match("^(%S+)%s*(.*)$")
-      if command and command:match(config.tmux.process_name) then
-        return pane_id, nil
-      end
+    local pane_id = find_pane_with_process(panes_info)
+    if pane_id then
+      return pane_id, nil
     end
+
     return nil, "no pane running " .. config.tmux.process_name .. " in current window"
   elseif config.tmux.target_mode == 'find_process' then
     -- Find pane with agent process
@@ -168,12 +233,11 @@ local function find_tmux_target()
       return nil, "not in tmux session"
     end
 
-    for line in panes_info:gmatch("[^\n]+") do
-      local pane_id, command = line:match("^(%S+)%s*(.*)$")
-      if command and command:match(config.tmux.process_name) then
-        return pane_id, nil
-      end
+    local pane_id = find_pane_with_process(panes_info)
+    if pane_id then
+      return pane_id, nil
     end
+
     return nil, "no pane running " .. config.tmux.process_name
   else -- 'window_name' (default)
     -- Check if agent window exists
@@ -189,6 +253,7 @@ end
 -- Create interactive prompt input
 local function create_prompt_input(initial_content, callback)
   -- Check if telescope is available
+  --- @diagnostic disable-next-line: unused-local
   local has_telescope, telescope = pcall(require, 'telescope')
   if config.interactive.use_telescope and has_telescope then
     -- Use telescope input
@@ -342,6 +407,19 @@ local function send_to_tmux_target(message)
     else
       switch_cmd = 'tmux select-pane -t ' .. target
     end
+
+    -- For pane targets, get the window info first and switch to window
+    if config.tmux.target_mode == 'find_process' then
+      local window_info = vim.fn.system('tmux list-panes -a -F "#{pane_id} #{window_id}" 2>/dev/null | grep "^' ..
+        target .. ' "')
+      if vim.v.shell_error == 0 and window_info ~= "" then
+        local window_id = window_info:match("%S+%s+(%S+)")
+        if window_id then
+          vim.fn.system('tmux select-window -t ' .. window_id)
+        end
+      end
+    end
+
     vim.fn.system(switch_cmd)
     if vim.v.shell_error ~= 0 then
       print("sent to " .. target .. " but failed to switch - please check manually")
