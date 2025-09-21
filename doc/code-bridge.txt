@@ -77,8 +77,13 @@ COMMANDS                                                  *code-bridge-commands*
                             other buffers.
 
                                                           *:CodeBridgeTmuxInteractive*
-:CodeBridgeTmuxInteractive  Edit the context prompt before sending. Uses 
-                            Telescope input if available.
+:CodeBridgeTmuxInteractive  Edit the context prompt before sending. When using popup
+                            editor, supports:
+                            - <C-s>: Send prompt - also <Leader-s> in normal
+                              mode
+                            - <C-x>: Hide prompt (resumable) - also <Leader-x>
+                              in normal mode
+                            - <C-c>: Cancel and close prompt
 
                                                           *:CodeBridgeTmuxAllInteractive*
 :CodeBridgeTmuxAllInteractive Edit all-buffers context prompt before sending.
@@ -130,7 +135,12 @@ COMMANDS                                                  *code-bridge-commands*
                             This also cancels any running queries.
 
                                                           *:CodeBridgeCancelQuery*
-:CodeBridgeCancelQuery      Cancel any currently running Claude Code query. 
+:CodeBridgeCancelQuery      Cancel any currently running Claude Code query.
+
+                                                          *:CodeBridgeResumePrompt*
+:CodeBridgeResumePrompt     Reopen a previously hidden prompt editor window.
+                            Use this to continue editing a prompt that was
+                            previously hidden. 
 
 ==============================================================================
 CONFIGURATION                                        *code-bridge-configuration*
@@ -146,7 +156,7 @@ Configuration options: >
         switch_to_target = true,         -- whether to switch to target after sending
       },
       interactive = {
-        use_telescope = true,            -- use telescope for interactive prompts (default: true)
+        use_telescope = false,            -- whether to use telescope for interactive prompts
       }
     })
 <
@@ -162,7 +172,7 @@ process_name: Process name to search for when using 'current_window' or 'find_pr
 
 switch_to_target: Whether to switch to the target after sending context (default: true)
 
-use_telescope: Use Telescope for interactive prompts when available (default: true)
+use_telescope: Use Telescope for interactive prompts when available (default: false)
 
 Optional key bindings: >
     -- Basic tmux commands
@@ -194,8 +204,10 @@ Optional key bindings: >
                    { desc = "Show chat window" })
     vim.keymap.set("n", "<leader>cx", ":CodeBridgeWipe<CR>", 
                    { desc = "Wipe chat and clear history" })
-    vim.keymap.set("n", "<leader>ck", ":CodeBridgeCancelQuery<CR>", 
+    vim.keymap.set("n", "<leader>ck", ":CodeBridgeCancelQuery<CR>",
                    { desc = "Cancel running query" })
+    vim.keymap.set("n", "<leader>cp", ":CodeBridgeResumePrompt<CR>",
+                   { desc = "Resume hidden prompt" })
 <
 
 ==============================================================================

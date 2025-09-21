@@ -16,7 +16,7 @@ with a Claude Code session already running in agent mode in another terminal via
 - **Context Sharing**: Send current file, all open buffers, or line ranges to Claude Code
 - **Tmux Integration**: Flexible targeting - window name, current window, or process search
 - **Interactive Chat**: Query Claude Code with persistent chat buffer
-- **Interactive Prompts**: Edit context and add questions before sending (uses Telescope if available)
+- **Interactive Prompts**: Edit context and add questions before sending with hide/resume support
 - **Git Integration**: Send git diffs and recently changed files as context
 - **Visual Mode Support**: Send selected line ranges as context
 - **Fallback Support**: Copies context to clipboard when tmux is unavailable
@@ -44,7 +44,7 @@ with a Claude Code session already running in agent mode in another terminal via
         find_node_process = true,        -- whether to look for a node.js process
       },
       interactive = {
-        use_telescope = true,            -- use telescope for interactive prompts (default: true)
+        use_telescope = false,            -- don't use telescope for interactive prompts
       }
     })
   end
@@ -98,7 +98,12 @@ Send all open buffers as context. In visual mode, includes your selection from c
 ### Advanced File Context Commands
 
 #### `:CodeBridgeTmuxInteractive`
-Edit the context prompt before sending (uses Telescope input if available).
+Edit the context prompt before sending. When using the popup editor:
+- `<Ctrl-s>`: Send the prompt
+- `<Leader-s>` in normal mode: Send the prompt
+- `<Ctrl-x>`: Hide the prompt editor (can be resumed later)
+- `<Leader-x>` in normal mode: Hide the prompt editor
+- `<Ctrl-c>`: Cancel and close the prompt editor
 
 #### `:CodeBridgeTmuxAllInteractive`
 Edit all-buffers context prompt before sending.
@@ -110,7 +115,8 @@ Send current git changes (unstaged) to the agent.
 Send staged changes only to the agent.
 
 #### `:CodeBridgeTmuxRecent`
-Send recently modified files. In git repos: prioritizes pending changes + recent commits. Outside git: uses Vim's recent files.
+Send recently modified files. In git repos: prioritizes pending changes + recent commits. Outside git: uses Vim's recent
+files.
 
 #### `:CodeBridgeTmuxRecentInteractive`
 Edit recent files context before sending.
@@ -144,6 +150,10 @@ Clears the chat history and closes the chat. This also cancels any running queri
 #### `:CodeBridgeCancelQuery`
 
 Cancels any currently running query.
+
+#### `:CodeBridgeResumePrompt`
+
+Reopens a hidden prompt editor window, allowing you to continue editing a previously hidden prompt.
 
 ## Tmux Integration (Optional)
 
@@ -192,6 +202,7 @@ vim.keymap.set("n", "<leader>ch", ":CodeBridgeHide<CR>", { desc = "Hide chat win
 vim.keymap.set("n", "<leader>cs", ":CodeBridgeShow<CR>", { desc = "Show chat window" })
 vim.keymap.set("n", "<leader>cx", ":CodeBridgeWipe<CR>", { desc = "Wipe chat and clear history" })
 vim.keymap.set("n", "<leader>ck", ":CodeBridgeCancelQuery<CR>", { desc = "Cancel running query" })
+vim.keymap.set("n", "<leader>cp", ":CodeBridgeResumePrompt<CR>", { desc = "Resume hidden prompt" })
 ```
 
 ## Configuration
@@ -204,7 +215,7 @@ The plugin works out of the box with no configuration required. The following op
 - `find_node_process`: Some agents like Claude Code run inside a node.js process so enabling this will look for the
   `'process_name'` in the command of node processes (default: `false`)
 - `switch_to_target`: Whether to switch to the target after sending context (default: `true`)
-- `use_telescope`: Use Telescope for interactive prompts when available (default: `true`)
+- `use_telescope`: Use Telescope for interactive prompts when available (default: `false`)
 
 ### Examples
 
@@ -217,9 +228,6 @@ require('code-bridge').setup({
     target_mode = 'window_name',
     window_name = 'claude',  -- window name to search for
   },
-  interactive = {
-    use_telescope = true,    -- use telescope for interactive prompts
-  }
 })
 ```
 
@@ -286,6 +294,7 @@ require('code-bridge').setup({
 | `:CodeBridgeTmuxRecentInteractive` | Edit recent context | Recent files + your question |
 | `:CodeBridgeQuery` | Interactive chat | File context + chat UI |
 | `:CodeBridgeChat` | Simple chat | Chat UI only |
+| `:CodeBridgeResumePrompt` | Resume hidden prompt | Previously edited context |
 
 ## License
 

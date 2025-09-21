@@ -8,9 +8,10 @@ local config = {
     window_name = 'claude',      -- window name to search for when target_mode = 'window_name'
     process_name = 'claude',     -- process name to search for when target_mode = 'current_window' or 'find_process'
     switch_to_target = true,     -- whether to switch to the target after sending
+    find_node_process = false,    -- whether to look for node processes with matching name
   },
   interactive = {
-    use_telescope = true,
+    use_telescope = false,       -- whether to use telescope for prompt input (if available)
   },
 }
 
@@ -18,6 +19,11 @@ local config = {
 local chat_buffer = nil
 local chat_window = nil
 local running_process = nil
+
+-- Track the prompt popup state during the session
+local prompt_buffer = nil
+local prompt_window = nil
+local prompt_callback = nil
 
 -- Build context string with filename and range
 local function build_context(opts)
@@ -269,8 +275,17 @@ local function create_prompt_input(initial_content, callback)
       end
     end)
   else
-    -- Create a new buffer for prompt editing
-    local buf = vim.api.nvim_create_buf(false, true)
+    -- Reuse existing prompt buffer or create new one
+    local buf
+    local is_reuse = false
+
+    if prompt_buffer and vim.api.nvim_buf_is_valid(prompt_buffer) then
+      buf = prompt_buffer
+      is_reuse = true
+    else
+      buf = vim.api.nvim_create_buf(false, true)
+      prompt_buffer = buf
+    end
 
     -- Calculate popup dimensions and position
     local width = math.floor(vim.o.columns * 0.8)
@@ -291,53 +306,99 @@ local function create_prompt_input(initial_content, callback)
       title_pos = 'center',
     })
 
+    -- Store window reference
+    prompt_window = win
+    prompt_callback = callback
+
     -- Set buffer options
-    vim.bo[buf].buftype = 'nofile'
-    vim.bo[buf].bufhidden = 'wipe'
-    vim.bo[buf].swapfile = false
-    vim.bo[buf].filetype = 'text'
-    vim.api.nvim_buf_set_name(buf, 'Prompt Editor')
-    vim.b[buf].is_code_bridge_buffer = true
+    if not is_reuse then
+      vim.bo[buf].buftype = 'nofile'
+      vim.bo[buf].bufhidden = 'wipe'
+      vim.bo[buf].swapfile = false
+      vim.bo[buf].filetype = 'text'
+      vim.api.nvim_buf_set_name(buf, 'Prompt Editor')
+      vim.b[buf].is_code_bridge_buffer = true
+    else
+      vim.bo[buf].bufhidden = 'wipe'
+    end
 
-    -- Set initial content
-    local lines = vim.split(initial_content, '\n')
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    -- Set content based on reuse vs new buffer
+    if is_reuse then
+      if initial_content ~= '' then
+        -- Append new content to existing buffer with double newline separator
+        local current_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+        local lines = { '' }
+        vim.list_extend(lines, vim.split(initial_content, '\n'))
+        vim.api.nvim_buf_set_lines(buf, #current_lines, #current_lines, false, lines)
 
-    -- Position cursor at end
-    vim.api.nvim_win_set_cursor(win, { #lines, #lines[#lines] })
+        -- Position cursor at end of new content
+        local total_lines = #current_lines + #lines
+        vim.api.nvim_win_set_cursor(win, { total_lines, #lines[#lines] })
+      end
+    else
+      -- New buffer - set initial content
+      local lines = vim.split(initial_content, '\n')
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
-    -- Add instructions at the top
-    local instructions = {
-      "-- Edit your prompt below and press <C-s> to send, <C-c> to cancel --",
-      "-- Context will be sent to the agent via tmux --",
-      "",
-    }
-    vim.api.nvim_buf_set_lines(buf, 0, 0, false, instructions)
-    vim.api.nvim_win_set_cursor(win, { #instructions + #lines, #lines[#lines] })
+      -- Position cursor at end
+      vim.api.nvim_win_set_cursor(win, { #lines, #lines[#lines] })
+    end
 
-    -- Set up keymaps for this buffer
-    local opts = { buffer = buf, silent = true, nowait = true }
+    print("Edit prompt and <ctrl-s> to send or <ctrl-x> to hide or <ctrl-c> to cancel")
 
+    -- Function to reuse clear prompt state
+    local clear_state = function()
+      prompt_buffer = nil
+      prompt_window = nil
+      prompt_callback = nil
+    end
+
+    -- Function to key map send prompt
     local send_prompt = function()
-      local content_lines = vim.api.nvim_buf_get_lines(buf, #instructions, -1, false)
+      local content_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
       local final_content = table.concat(content_lines, '\n')
+      clear_state()
       vim.api.nvim_win_close(win, false)
       callback(final_content)
       print("prompt sent")
     end
 
+    -- Function to key map cancel prompt
     local cancel_prompt = function()
+      clear_state()
       vim.api.nvim_win_close(win, false)
       print("prompt cancelled")
     end
 
+    -- Function to key map hide prompt
+    local function hide_prompt()
+      if vim.api.nvim_win_is_valid(win) and vim.api.nvim_buf_is_valid(buf) then
+        vim.bo[buf].bufhidden = 'hide'
+        vim.api.nvim_win_close(win, false)
+        prompt_window = nil
+        print("prompt hidden - use :CodeBridgeResumePrompt to reopen")
+      end
+    end
+
+    -- Set up keymaps for this buffer
+    local opts = { buffer = buf, silent = true, nowait = true }
     vim.keymap.set('n', '<leader>s', send_prompt, opts)
+    vim.keymap.set('n', '<leader>x', hide_prompt, opts)
     vim.keymap.set('n', '<C-s>', send_prompt, opts)
     vim.keymap.set('n', '<C-c>', cancel_prompt, opts)
-
-    -- Also work in insert mode
-    vim.keymap.set('i', '<C-s>', '<Esc><C-s>', opts)
-    vim.keymap.set('i', '<C-c>', '<Esc><C-c>', opts)
+    vim.keymap.set('n', '<C-x>', hide_prompt, opts)
+    vim.keymap.set('i', '<C-s>', function()
+      vim.cmd('stopinsert')
+      send_prompt()
+    end, opts)
+    vim.keymap.set('i', '<C-c>', function()
+      vim.cmd('stopinsert')
+      cancel_prompt()
+    end, opts)
+    vim.keymap.set('i', '<C-x>', function()
+      vim.cmd('stopinsert')
+      hide_prompt()
+    end, opts)
   end
 end
 
@@ -680,6 +741,24 @@ M.cancel_query = function()
   end
 end
 
+-- Show existing prompt popup to resume editing
+M.resume_prompt = function()
+  -- If a popup is already visible, just focus on it
+  if prompt_window and vim.api.nvim_win_is_valid(prompt_window) then
+    vim.api.nvim_set_current_win(prompt_window)
+    return
+  end
+
+  -- Reopen popup with existing prompt content
+  if prompt_buffer and vim.api.nvim_buf_is_valid(prompt_buffer) then
+    -- Create prompt with no initial content to reopen existing buffer
+    create_prompt_input('', prompt_callback or function() end)
+    return
+  end
+
+  print("no prompt to resume")
+end
+
 -- Setup function for plugin initialization
 M.setup = function(user_config)
   -- Merge user config with defaults
@@ -734,6 +813,7 @@ M.setup = function(user_config)
   vim.api.nvim_create_user_command('CodeBridgeShow', M.show_chat, {})
   vim.api.nvim_create_user_command('CodeBridgeWipe', M.wipe_chat, {})
   vim.api.nvim_create_user_command('CodeBridgeCancelQuery', M.cancel_query, {})
+  vim.api.nvim_create_user_command('CodeBridgeResumePrompt', M.resume_prompt, {})
 end
 
 return M
