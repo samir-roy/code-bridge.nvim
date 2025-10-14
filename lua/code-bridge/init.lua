@@ -301,7 +301,7 @@ local function create_prompt_input(initial_content, callback)
       row = row,
       col = col,
       style = 'minimal',
-      border = 'rounded',
+      border = vim.o.winborder ~= '' and vim.o.winborder or 'rounded',
       title = ' Edit Prompt ',
       title_pos = 'center',
     })
