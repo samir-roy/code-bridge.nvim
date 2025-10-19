@@ -45,6 +45,7 @@ with a Claude Code session already running in agent mode in another terminal via
       },
       interactive = {
         use_telescope = false,            -- don't use telescope for interactive prompts
+        model = nil,                      -- claude model to use (e.g. 'claude-haiku-4-5')
       }
     })
   end
@@ -216,6 +217,7 @@ The plugin works out of the box with no configuration required. The following op
   `'process_name'` in the command of node processes (default: `false`)
 - `switch_to_target`: Whether to switch to the target after sending context (default: `true`)
 - `use_telescope`: Use Telescope for interactive prompts when available (default: `false`)
+- `model`: Claude model to use for queries and chat (e.g., `'claude-haiku-4-5'`, `'claude-haiku-4-5-20251001'`). If `nil`, uses Claude's default model (default: `nil`)
 
 ### Examples
 

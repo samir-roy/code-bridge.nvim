@@ -12,6 +12,7 @@ local config = {
   },
   interactive = {
     use_telescope = false,       -- whether to use telescope for prompt input (if available)
+    model = nil,                 -- claude model to use for queries and chat (nil = use claude's default)
   },
 }
 
@@ -628,8 +629,19 @@ M.claude_query = function(opts)
   vim.api.nvim_set_current_win(original_win)
 
   -- Set command based on new or existing chat
-  local cmd_args = is_reuse and { config.tmux.process_name, '-c', '-p', full_message } or
-      { config.tmux.process_name, '-p', full_message }
+  local cmd_args = { config.tmux.process_name }
+
+  if is_reuse then
+    table.insert(cmd_args, "-c")
+  end
+
+  if config.interactive.model then
+    table.insert(cmd_args, "--model")
+    table.insert(cmd_args, config.interactive.model)
+  end
+
+  table.insert(cmd_args, "-p")
+  table.insert(cmd_args, full_message)
 
   -- Execute the command asynchronously
   running_process = vim.system(cmd_args, {}, function(result)
