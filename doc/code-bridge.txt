@@ -24,9 +24,9 @@ buffers.
 ==============================================================================
 REQUIREMENTS                                          *code-bridge-requirements*
 
-- Neovim 0.7+ (uses modern Lua APIs)
-- Claude Code CLI installed and configured
-- tmux (optional, for automatic window switching)
+- Neovim 0.7+
+- Claude Code or Opencode installed and configured
+- tmux (optional)
 
 ==============================================================================
 INSTALLATION                                          *code-bridge-installation*
@@ -145,34 +145,112 @@ COMMANDS                                                  *code-bridge-commands*
 ==============================================================================
 CONFIGURATION                                        *code-bridge-configuration*
 
-The plugin works out of the box with no configuration required. 
+The plugin works out of the box with no configuration required, with the
+following defaults:
 
 Configuration options: >
     require('code-bridge').setup({
       tmux = {
-        target_mode = 'window_name',     -- 'window_name', 'current_window', 'find_process'
-        window_name = 'claude',          -- used when target_mode = 'window_name'
-        process_name = 'claude',         -- used when target_mode = 'current_window' or 'find_process'
-        switch_to_target = true,         -- whether to switch to target after sending
+        -- target mode to use - 'window_name', 'current_window', 'find_process'
+        target_mode = 'window_name',
+
+        -- window name to search for when target_mode = 'window_name'
+        window_name = 'claude',
+
+        -- process name to search for when target_mode = 'current_window' or 'find_process'
+        process_name = 'claude',
+
+        -- whether to switch to the target after sending
+        switch_to_target = true,
+
+        -- whether to look for node processes with matching name
+        find_node_process = false,
       },
+
       interactive = {
-        use_telescope = false,            -- whether to use telescope for interactive prompts
+        -- whether to use telescope for prompt input (if available)
+        use_telescope = false,
+      },
+
+      chat = {
+        -- llm model to use for queries and chat (nil = default)
+        model = nil,
+
+        -- permission flag for claude code only (nil = default or 'acceptEdits' = accept edits)
+        permission = nil,
+      },
+    })
+<
+
+                                                      *code-bridge-tmux-options*
+Tmux Options:
+
+target_mode: How to find claude ('window_name', 'current_window', 'find_process')
+  (default: 'window_name')
+
+window_name: Window name to search for when using 'window_name' mode
+  (default: 'claude')
+
+process_name: Process name to search for when using 'current_window' or
+  'find_process' mode
+  (default: 'claude')
+
+find_node_process: Some agents like Claude Code run inside a node.js process
+  so enabling this will look for the 'process_name' in the command of node
+  processes 
+  (default: false)
+
+switch_to_target: Whether to switch to the target after sending context
+  (default: true)
+
+                                                      *code-bridge-interactive-options*
+Interactive Prompt Options:
+
+use_telescope: Use Telescope for interactive prompts when available
+  (default: false)
+
+                                                      *code-bridge-chat-options*
+Quick Chat Options:
+
+model: Specific LLM model to use for queries and chat
+  (e.g. 'claude-haiku-4-5') (default: nil)
+
+permission: Permission flag for use with Claude Code only
+  ('acceptEdits' or nil) (default: nil)
+
+                                                      *code-bridge-config-examples*
+Configuration Examples:
+
+'window_name' (default): Search for a tmux window by name >
+    require('code-bridge').setup({
+      tmux = {
+        target_mode = 'window_name',
+        window_name = 'claude',  -- window name to search for
+      },
+    })
+<
+
+'current_window': Search for pane with claude process in the current tmux
+window >
+    require('code-bridge').setup({
+      tmux = {
+        target_mode = 'current_window',
+        process_name = 'claude',
+        switch_to_target = false,  -- don't switch to claude pane after sending
+        find_node_process = true,  -- agent runs inside node.js process
       }
     })
 <
 
-target_mode options:
-- 'window_name' (default): Search for a tmux window by name
-- 'current_window': Search for claude process in the current tmux window  
-- 'find_process': Find any pane running a claude process
-
-window_name: Window name to search for when using 'window_name' mode (default: 'claude')
-
-process_name: Process name to search for when using 'current_window' or 'find_process' mode (default: 'claude')
-
-switch_to_target: Whether to switch to the target after sending context (default: true)
-
-use_telescope: Use Telescope for interactive prompts when available (default: false)
+'find_process': Find any tmux pane running a opencode process >
+    require('code-bridge').setup({
+      tmux = {
+        target_mode = 'find_process',
+        process_name = 'opencode',  -- process name to search for
+        switch_to_target = true,    -- switch to opencode pane after sending
+      }
+    })
+<
 
 Optional key bindings: >
     -- Basic tmux commands

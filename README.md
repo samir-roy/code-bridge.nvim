@@ -11,21 +11,36 @@ with a Claude Code session already running in agent mode in another terminal via
 
 <img src="code-bridge-demo.gif" alt="code-bridge-demo" width="400">
 
+
 ## Features
 
-- **Context Sharing**: Send current file, all open buffers, or line ranges to Claude Code
-- **Tmux Integration**: Flexible targeting - window name, current window, or process search
-- **Interactive Chat**: Query Claude Code with persistent chat buffer
-- **Interactive Prompts**: Edit context and add questions before sending with hide/resume support
-- **Git Integration**: Send git diffs and recently changed files as context
-- **Visual Mode Support**: Send selected line ranges as context
-- **Fallback Support**: Copies context to clipboard when tmux is unavailable
+### Context Sharing
+
+Send context information to the agent with support for current file, all open buffers, line ranges, git
+diffs, or recently changed files. Context can be sent to the agent via the system clipboard or via tmux.
+The tmux integration allows for flexible targeting via the window name or process search to find the pane
+running the agent.
+
+### Quick Chat
+
+A quick chat interface to query the agent that splits open a persistent chat buffer. Allows for chatting with
+the agent within Neovim. This is useful for quickly asking questions outside of the session running in the
+agent or when there is no coding agent running. 
+
+### Interactive Prompt Composer
+
+Interactive prompts allow for composing the prompt within Neovim before sending to the agent. Multiple file
+contexts can be easily added to the prompt along with information or questions and the prompt can be composed
+with full vim editor support, before sending to the agent. Hide and resume the prompt composer as needed to
+easily write detailed prompts.
+
 
 ## Requirements
 
-- [Neovim](https://neovim.io/) 0.7+
-- [Claude Code CLI](https://github.com/anthropics/claude-code) installed and configured
-- [tmux](https://github.com/tmux/tmux) (optional, for automatic window switching)
+- Neovim 0.7+
+- Claude Code or Opencode installed and configured
+- tmux (optional)
+
 
 ## Installation
 
@@ -35,18 +50,7 @@ with a Claude Code session already running in agent mode in another terminal via
 {
   "samir-roy/code-bridge.nvim",
   config = function()
-    require('code-bridge').setup({
-      tmux = {
-        target_mode = 'window_name',     -- 'window_name', 'current_window', 'find_process'
-        window_name = 'claude',          -- used when target_mode = 'window_name'
-        process_name = 'claude',         -- used when target_mode = 'current_window' or 'find_process'
-        switch_to_target = true,         -- whether to switch to target after sending
-        find_node_process = true,        -- whether to look for a node.js process
-      },
-      interactive = {
-        use_telescope = false,            -- don't use telescope for interactive prompts
-      }
-    })
+    require('code-bridge').setup()
   end
 }
 ```
@@ -74,9 +78,10 @@ Then add to your `init.lua`:
 require('code-bridge').setup()
 ```
 
+
 ## Usage
 
-The plugin provides extensive commands for different workflows:
+The plugin provides various commands for different workflows:
 
 ### Basic File Context Commands
 
@@ -181,7 +186,7 @@ The plugin will:
 
 ## Key Bindings (Optional)
 
-Add these to your configuration for quick access:
+Add some or all of these to your configuration for quick access:
 
 ```lua
 -- Basic tmux commands
@@ -207,15 +212,44 @@ vim.keymap.set("n", "<leader>cp", ":CodeBridgeResumePrompt<CR>", { desc = "Resum
 
 ## Configuration
 
-The plugin works out of the box with no configuration required. The following options are available:
+The plugin works out of the box with no configuration required, with the following defaults:
 
-- `target_mode`: How to find claude (`'window_name'`, `'current_window'`, `'find_process'`)
+```
+{
+  tmux = {
+    target_mode = 'window_name', -- 'window_name', 'current_window', 'find_process'
+    window_name = 'claude',      -- window name to search for when target_mode = 'window_name'
+    process_name = 'claude',     -- process name to search for when target_mode = 'current_window' or 'find_process'
+    switch_to_target = true,     -- whether to switch to the target after sending
+    find_node_process = false,   -- whether to look for node processes with matching name
+  },
+  interactive = {
+    use_telescope = false,       -- whether to use telescope for prompt input (if available)
+  },
+  chat = {
+    model = nil,                 -- llm model to use for queries and chat (nil = default)
+    permission = nil,            -- permission flag for claude code only (nil = default or 'acceptEdits' = accept edits)
+  },
+}
+```
+
+### Tmux options
+
+- `target_mode`: How to find claude (`'window_name'`, `'current_window'`, `'find_process'`) (default: `'window_name'`)
 - `window_name`: Window name to search for when using `'window_name'` mode (default: `'claude'`)
 - `process_name`: Process name to search for when using `'current_window'` or `'find_process'` mode (default: `'claude'`)
 - `find_node_process`: Some agents like Claude Code run inside a node.js process so enabling this will look for the
   `'process_name'` in the command of node processes (default: `false`)
 - `switch_to_target`: Whether to switch to the target after sending context (default: `true`)
+
+### Interactive prompt options
+
 - `use_telescope`: Use Telescope for interactive prompts when available (default: `false`)
+
+### Quick chat options
+
+- `model`: Specific LLM model to use for queries and chat (e.g. `'claude-haiku-4-5'`) (default: `nil`)
+- `permission`: Permission flag for use with Claude Code only (`'acceptEdits'` or `nil`) (default: `nil`)
 
 ### Examples
 
@@ -237,25 +271,26 @@ require('code-bridge').setup({
   tmux = {
     target_mode = 'current_window',
     process_name = 'claude',
-    switch_to_target = true,  -- switch to claude pane after sending
+    switch_to_target = false,  -- don't switch to claude pane after sending
     find_node_process = true, -- agent runs inside node.js process
   }
 })
 ```
 
-**`'find_process'`**: Find any pane running a claude process
+**`'find_process'`**: Find any tmux pane running a opencode process
 ```lua
 require('code-bridge').setup({
   tmux = {
     target_mode = 'find_process',
-    process_name = 'claude',  -- process name to search for
+    process_name = 'opencode',  -- process name to search for
+    switch_to_target = true,  -- switch to opencode pane after sending
   }
 })
 ```
 
 ## Example Workflows
 
-### Interactive Chat Workflow
+### Quick Chat Workflow
 1. Open a file in Neovim
 2. Select some lines in visual mode
 3. Run `:CodeBridgeQuery`
@@ -292,8 +327,8 @@ require('code-bridge').setup({
 | `:CodeBridgeTmuxDiffStaged` | Staged review | Git changes (staged) |
 | `:CodeBridgeTmuxRecent` | Recent context | Recent files + pending changes |
 | `:CodeBridgeTmuxRecentInteractive` | Edit recent context | Recent files + your question |
-| `:CodeBridgeQuery` | Interactive chat | File context + chat UI |
-| `:CodeBridgeChat` | Simple chat | Chat UI only |
+| `:CodeBridgeQuery` | Quick chat | File context + chat history |
+| `:CodeBridgeChat` | Quick chat | Chat history only |
 | `:CodeBridgeResumePrompt` | Resume hidden prompt | Previously edited context |
 
 ## License

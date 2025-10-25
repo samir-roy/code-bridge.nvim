@@ -8,10 +8,14 @@ local config = {
     window_name = 'claude',      -- window name to search for when target_mode = 'window_name'
     process_name = 'claude',     -- process name to search for when target_mode = 'current_window' or 'find_process'
     switch_to_target = true,     -- whether to switch to the target after sending
-    find_node_process = false,    -- whether to look for node processes with matching name
+    find_node_process = false,   -- whether to look for node processes with matching name
   },
   interactive = {
     use_telescope = false,       -- whether to use telescope for prompt input (if available)
+  },
+  chat = {
+    model = nil,                 -- llm model to use for queries and chat (nil = default)
+    permission = nil,            -- permission flag for claude code only (nil = default or 'acceptEdits' = accept edits)
   },
 }
 
@@ -627,9 +631,25 @@ M.claude_query = function(opts)
   -- Return focus to original window
   vim.api.nvim_set_current_win(original_win)
 
-  -- Set command based on new or existing chat
-  local cmd_args = is_reuse and { config.tmux.process_name, '-c', '-p', full_message } or
-      { config.tmux.process_name, '-p', full_message }
+  -- Set command based on new or existing chat and config
+  local cmd_args = { config.tmux.process_name }
+
+  if is_reuse then
+    table.insert(cmd_args, "-c")
+  end
+
+  if config.chat.model then
+    table.insert(cmd_args, "--model")
+    table.insert(cmd_args, config.chat.model)
+  end
+
+  if config.chat.permission then
+    table.insert(cmd_args, "--permission-mode")
+    table.insert(cmd_args, config.chat.permission)
+  end
+
+  table.insert(cmd_args, "-p")
+  table.insert(cmd_args, full_message)
 
   -- Execute the command asynchronously
   running_process = vim.system(cmd_args, {}, function(result)
