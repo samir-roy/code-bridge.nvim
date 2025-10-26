@@ -29,6 +29,13 @@ local prompt_buffer = nil
 local prompt_window = nil
 local prompt_callback = nil
 
+local function strip_ansi(text)
+    text = text:gsub("\27%[[%d;]*m", "")        -- Remove color/formatting codes
+    text = text:gsub("\27%[[%d;]*[ABCD]", "")   -- Remove cursor movement codes
+    text = text:gsub("\27%[[%d;]*[JKH]", "")    -- Remove other escape sequences
+    return text
+end
+
 -- Build context string with filename and range
 local function build_context(opts)
   if opts.use_all_buffers then
@@ -634,8 +641,13 @@ M.claude_query = function(opts)
   -- Set command based on new or existing chat and config
   local cmd_args = { config.tmux.process_name }
 
+  local is_opencode = config.tmux.process_name == 'opencode'
+
   if is_reuse then
     table.insert(cmd_args, "-c")
+    if is_opencode then
+      table.insert(cmd_args, "true")
+    end
   end
 
   if config.chat.model then
@@ -648,7 +660,7 @@ M.claude_query = function(opts)
     table.insert(cmd_args, config.chat.permission)
   end
 
-  table.insert(cmd_args, "-p")
+  table.insert(cmd_args, is_opencode and "run" or "-p")
   table.insert(cmd_args, full_message)
 
   -- Execute the command asynchronously
@@ -670,7 +682,12 @@ M.claude_query = function(opts)
         -- Check for errors
         local output_text = result.stdout or 'No output received'
         if result.stderr and result.stderr ~= '' then
-          output_text = 'Error: ' .. result.stderr
+          output_text = (result.code ~= 0 and 'Error:\n' or '') .. result.stderr
+        end
+
+        -- Strip ansi characters
+        if is_opencode then
+          output_text = strip_ansi(output_text)
         end
 
         -- Add the response
