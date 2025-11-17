@@ -126,6 +126,18 @@ files.
 #### `:CodeBridgeTmuxRecentInteractive`
 Edit recent files context before sending.
 
+#### `:CodeBridgeTmuxDiagnostics`
+Send diagnostics from the current buffer to the agent.
+
+#### `:CodeBridgeTmuxDiagnosticsAll`
+Send diagnostics from all buffers to the agent.
+
+#### `:CodeBridgeTmuxDiagnosticsErrors`
+Send only error-level diagnostics from the current buffer to the agent.
+
+#### `:CodeBridgeTmuxDiagnosticsErrorsAll`
+Send only error-level diagnostics from all buffers to the agent.
+
 ### Chat Interface Commands
 
 #### `:CodeBridgeQuery`
@@ -198,6 +210,7 @@ vim.keymap.set("n", "<leader>ca", ":CodeBridgeTmuxAll<CR>", { desc = "Send all b
 vim.keymap.set("n", "<leader>ci", ":CodeBridgeTmuxInteractive<CR>", { desc = "Interactive prompt to claude" })
 vim.keymap.set("n", "<leader>cd", ":CodeBridgeTmuxDiff<CR>", { desc = "Send git diff to claude" })
 vim.keymap.set("n", "<leader>cr", ":CodeBridgeTmuxRecent<CR>", { desc = "Send recent files to claude" })
+vim.keymap.set("n", "<leader>ce", ":CodeBridgeTmuxDiagnostics<CR>", { desc = "Send diagnostics to claude" })
 
 -- Chat interface
 vim.keymap.set("n", "<leader>cq", ":CodeBridgeQuery<CR>", { desc = "Query claude with context" })
@@ -327,6 +340,10 @@ require('code-bridge').setup({
 | `:CodeBridgeTmuxDiffStaged` | Staged review | Git changes (staged) |
 | `:CodeBridgeTmuxRecent` | Recent context | Recent files + pending changes |
 | `:CodeBridgeTmuxRecentInteractive` | Edit recent context | Recent files + your question |
+| `:CodeBridgeTmuxDiagnostics` | Send diagnostics | Current buffer diagnostics |
+| `:CodeBridgeTmuxDiagnosticsAll` | Send all diagnostics | All buffers diagnostics |
+| `:CodeBridgeTmuxDiagnosticsErrors` | Send errors | Current buffer errors only |
+| `:CodeBridgeTmuxDiagnosticsErrorsAll` | Send all errors | All buffers errors only |
 | `:CodeBridgeQuery` | Quick chat | File context + chat history |
 | `:CodeBridgeChat` | Quick chat | Chat history only |
 | `:CodeBridgeResumePrompt` | Resume hidden prompt | Previously edited context |
