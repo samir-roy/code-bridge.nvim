@@ -102,6 +102,22 @@ COMMANDS                                                  *code-bridge-commands*
                                                           *:CodeBridgeTmuxRecentInteractive*
 :CodeBridgeTmuxRecentInteractive Edit recent files context before sending.
 
+                                                          *:CodeBridgeTmuxDiagnostics*
+:CodeBridgeTmuxDiagnostics      Send diagnostics from the current buffer to the agent.
+                            Diagnostics are grouped by file and include line number,
+                            column, severity, and message.
+
+                                                          *:CodeBridgeTmuxDiagnosticsAll*
+:CodeBridgeTmuxDiagnosticsAll   Send diagnostics from all buffers to the agent.
+
+                                                          *:CodeBridgeTmuxDiagnosticsErrors*
+:CodeBridgeTmuxDiagnosticsErrors Send only error-level diagnostics from the current
+                            buffer to the agent.
+
+                                                          *:CodeBridgeTmuxDiagnosticsErrorsAll*
+:CodeBridgeTmuxDiagnosticsErrorsAll Send only error-level diagnostics from all
+                            buffers to the agent.
+
                                                           *:CodeBridgeQuery*
 :CodeBridgeQuery            Open interactive chat with Claude Code, including
                             file context. Creates a persistent markdown buffer
@@ -262,12 +278,14 @@ Optional key bindings: >
                    { desc = "Send all buffers to claude" })
 
     -- Advanced tmux commands
-    vim.keymap.set("n", "<leader>ci", ":CodeBridgeTmuxInteractive<CR>", 
+    vim.keymap.set("n", "<leader>ci", ":CodeBridgeTmuxInteractive<CR>",
                    { desc = "Interactive prompt to claude" })
-    vim.keymap.set("n", "<leader>cd", ":CodeBridgeTmuxDiff<CR>", 
+    vim.keymap.set("n", "<leader>cd", ":CodeBridgeTmuxDiff<CR>",
                    { desc = "Send git diff to claude" })
-    vim.keymap.set("n", "<leader>cr", ":CodeBridgeTmuxRecent<CR>", 
+    vim.keymap.set("n", "<leader>cr", ":CodeBridgeTmuxRecent<CR>",
                    { desc = "Send recent files to claude" })
+    vim.keymap.set("n", "<leader>ce", ":CodeBridgeTmuxDiagnostics<CR>",
+                   { desc = "Send diagnostics to claude" })
 
     -- Chat interface
     vim.keymap.set("n", "<leader>cq", ":CodeBridgeQuery<CR>", 

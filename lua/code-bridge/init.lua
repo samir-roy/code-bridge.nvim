@@ -91,6 +91,89 @@ local function build_git_diff_context(staged_only)
   return header .. diff_output, nil
 end
 
+
+-- Build diagnostics context
+local function build_diagnostics_context(opts)
+  opts = opts or {}
+
+  -- Get diagnostics from current buffer or all buffers
+  local all_diagnostics
+  if opts.use_all_buffers then
+    all_diagnostics = vim.diagnostic.get()
+  else
+    local current_buf = vim.api.nvim_get_current_buf()
+    all_diagnostics = vim.diagnostic.get(current_buf)
+  end
+
+  -- Filter by severity if specified
+  if opts.severity then
+    local filtered = {}
+    for _, diagnostic in ipairs(all_diagnostics) do
+      if diagnostic.severity == opts.severity then
+        table.insert(filtered, diagnostic)
+      end
+    end
+    all_diagnostics = filtered
+  end
+
+  if #all_diagnostics == 0 then
+    local scope = opts.use_all_buffers and 'no diagnostics found' or 'no diagnostics in current buffer'
+    if opts.severity then
+      local severity_name = vim.diagnostic.severity[opts.severity]:lower()
+      scope = opts.use_all_buffers and ('no ' .. severity_name .. ' diagnostics found')
+        or ('no ' .. severity_name .. ' diagnostics in current buffer')
+    end
+    return nil, scope
+  end
+
+  -- Group diagnostics by file
+  local diagnostics_by_file = {}
+  for _, diagnostic in ipairs(all_diagnostics) do
+    local bufnr = diagnostic.bufnr
+    local buf_name = vim.api.nvim_buf_get_name(bufnr)
+    local relative_name = vim.fn.fnamemodify(buf_name, ':~:.')
+
+    if relative_name ~= '' then
+      if not diagnostics_by_file[relative_name] then
+        diagnostics_by_file[relative_name] = {}
+      end
+      table.insert(diagnostics_by_file[relative_name], diagnostic)
+    end
+  end
+
+  -- Build output string
+  local header = '# Diagnostics'
+  if opts.severity then
+    local severity_name = vim.diagnostic.severity[opts.severity]
+    header = '# ' .. severity_name .. ' Diagnostics'
+  end
+  if opts.use_all_buffers then
+    header = header .. ' (All Buffers)'
+  end
+  local output = { header }
+
+  for file, diagnostics in pairs(diagnostics_by_file) do
+    table.insert(output, '')
+    table.insert(output, '## ' .. file)
+
+    -- Sort diagnostics by line number
+    table.sort(diagnostics, function(a, b)
+      return a.lnum < b.lnum
+    end)
+
+    for _, diagnostic in ipairs(diagnostics) do
+      local severity = vim.diagnostic.severity[diagnostic.severity]
+      local line = diagnostic.lnum + 1 -- Convert 0-indexed to 1-indexed
+      local col = diagnostic.col + 1
+      local message = diagnostic.message:gsub('\n', ' ') -- Remove newlines from message
+
+      table.insert(output, string.format('- [%s] Line %d, Col %d: %s', severity, line, col, message))
+    end
+  end
+
+  return table.concat(output, '\n'), nil
+end
+
 -- Build recently added files context
 local function build_recent_files_context(limit)
   limit = limit or 10
@@ -527,6 +610,12 @@ M.send_git_diff_to_tmux = function(opts)
   send_to_tmux_wrapper(opts, context, error_msg)
 end
 
+-- Send diagnostics to tmux claude target
+M.send_diagnostics_to_tmux = function(opts)
+  local context, error_msg = build_diagnostics_context(opts)
+  send_to_tmux_wrapper(opts, context, error_msg or 'no diagnostics context available')
+end
+
 -- Send recently added files to tmux claude target
 M.send_recent_files_to_tmux = function(opts)
   local context, error_msg = build_recent_files_context(opts.max_recent_files)
@@ -827,6 +916,23 @@ M.setup = function(user_config)
   vim.api.nvim_create_user_command('CodeBridgeTmuxDiffStaged', function(opts)
     opts.staged_only = true
     M.send_git_diff_to_tmux(opts)
+  end, {})
+
+
+  -- Diagnostics commands
+  vim.api.nvim_create_user_command('CodeBridgeTmuxDiagnostics', M.send_diagnostics_to_tmux, {})
+  vim.api.nvim_create_user_command('CodeBridgeTmuxDiagnosticsAll', function(opts)
+    opts.use_all_buffers = true
+    M.send_diagnostics_to_tmux(opts)
+  end, {})
+  vim.api.nvim_create_user_command('CodeBridgeTmuxDiagnosticsErrors', function(opts)
+    opts.severity = vim.diagnostic.severity.ERROR
+    M.send_diagnostics_to_tmux(opts)
+  end, {})
+  vim.api.nvim_create_user_command('CodeBridgeTmuxDiagnosticsErrorsAll', function(opts)
+    opts.severity = vim.diagnostic.severity.ERROR
+    opts.use_all_buffers = true
+    M.send_diagnostics_to_tmux(opts)
   end, {})
 
   -- Recent files commands
