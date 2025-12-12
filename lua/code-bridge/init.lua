@@ -6,7 +6,7 @@ local config = {
   tmux = {
     target_mode = 'window_name', -- 'window_name', 'current_window', 'find_process'
     window_name = 'claude',      -- window name to search for when target_mode = 'window_name'
-    process_name = 'claude',     -- process name to search for when target_mode = 'current_window' or 'find_process'
+    process_name = 'claude',     -- string or list of process names to search for when target_mode = 'current_window' or 'find_process'
     switch_to_target = true,     -- whether to switch to the target after sending
     find_node_process = false,   -- whether to look for node processes with matching name
   },
@@ -28,6 +28,46 @@ local running_process = nil
 local prompt_buffer = nil
 local prompt_window = nil
 local prompt_callback = nil
+
+local function get_process_names()
+  local names = config.tmux.process_name
+  if type(names) == 'string' then
+    return { names }
+  elseif type(names) == 'table' then
+    local process_names = {}
+    for _, name in ipairs(names) do
+      if type(name) == 'string' and name ~= '' then
+        table.insert(process_names, name)
+      end
+    end
+    return process_names
+  end
+
+  return {}
+end
+
+local function process_name_label()
+  local names = get_process_names()
+  if #names == 0 then
+    return 'configured process'
+  end
+  if #names == 1 then
+    return names[1]
+  end
+  return table.concat(names, '/')
+end
+
+local function matches_process(cmd)
+  if not cmd or cmd == '' then
+    return false
+  end
+  for _, name in ipairs(get_process_names()) do
+    if cmd:match(vim.pesc(name)) then
+      return true
+    end
+  end
+  return false
+end
 
 local function strip_ansi(text)
     text = text:gsub("\27%[[%d;]*m", "")        -- Remove color/formatting codes
@@ -90,7 +130,6 @@ local function build_git_diff_context(staged_only)
   local header = staged_only and "# Staged Changes (git diff --cached)\n" or "# Git Changes (git diff HEAD)\n"
   return header .. diff_output, nil
 end
-
 
 -- Build diagnostics context
 local function build_diagnostics_context(opts)
@@ -270,7 +309,7 @@ local function is_claude_process(pane_id)
     local ps_cmd = 'ps -p ' .. child_pid .. ' -o args= 2>/dev/null'
     local args = vim.fn.system(ps_cmd)
     if vim.v.shell_error == 0 then
-      if args:match(config.tmux.process_name) then
+      if matches_process(args) then
         return true
       end
     end
@@ -280,7 +319,7 @@ local function is_claude_process(pane_id)
   local parent_ps_cmd = 'ps -p ' .. pid .. ' -o args= 2>/dev/null'
   local parent_args = vim.fn.system(parent_ps_cmd)
   if vim.v.shell_error == 0 then
-    if parent_args:match(config.tmux.process_name) then
+    if matches_process(parent_args) then
       return true
     end
   end
@@ -293,7 +332,7 @@ local function find_pane_with_process(panes_info)
   -- Look for exact process name match
   for line in panes_info:gmatch("[^\n]+") do
     local pane_id, command = line:match("^(%S+)%s*(.*)$")
-    if command and command:match(config.tmux.process_name) then
+    if command and matches_process(command) then
       return pane_id
     end
   end
@@ -302,7 +341,7 @@ local function find_pane_with_process(panes_info)
   if config.tmux.find_node_process then
     for line in panes_info:gmatch("[^\n]+") do
       local pane_id, command = line:match("^(%S+)%s*(.*)$")
-      if command and command == "node" and is_claude_process(pane_id) then
+      if command and command == 'node' and is_claude_process(pane_id) then
         return pane_id
       end
     end
@@ -325,7 +364,7 @@ local function find_tmux_target()
       return pane_id, nil
     end
 
-    return nil, "no pane running " .. config.tmux.process_name .. " in current window"
+    return nil, "no pane running " .. process_name_label() .. " in current window"
   elseif config.tmux.target_mode == 'find_process' then
     -- Find pane with agent process
     local panes_info = vim.fn.system('tmux list-panes -a -F "#{pane_id} #{pane_current_command}" 2>/dev/null')
@@ -338,7 +377,7 @@ local function find_tmux_target()
       return pane_id, nil
     end
 
-    return nil, "no pane running " .. config.tmux.process_name
+    return nil, "no pane running " .. process_name_label()
   else -- 'window_name' (default)
     -- Check if agent window exists
     vim.fn.system('tmux list-windows -F "#{window_name}" 2>/dev/null | grep -x ' .. config.tmux.window_name)
@@ -565,8 +604,8 @@ local function send_to_tmux_target(message)
 
     -- For pane targets, get the window info first and switch to window
     if config.tmux.target_mode == 'find_process' then
-      local window_info = vim.fn.system('tmux list-panes -a -F "#{pane_id} #{window_id}" 2>/dev/null | grep "^' ..
-        target .. ' "')
+      local window_info =
+        vim.fn.system('tmux list-panes -a -F "#{pane_id} #{window_id}" 2>/dev/null | grep "^' .. target .. ' "')
       if vim.v.shell_error == 0 and window_info ~= "" then
         local window_id = window_info:match("%S+%s+(%S+)")
         if window_id then
@@ -728,9 +767,10 @@ M.claude_query = function(opts)
   vim.api.nvim_set_current_win(original_win)
 
   -- Set command based on new or existing chat and config
-  local cmd_args = { config.tmux.process_name }
+  local primary_process_name = get_process_names()[1] or config.tmux.process_name or 'claude'
+  local cmd_args = { primary_process_name }
 
-  local is_opencode = config.tmux.process_name == 'opencode'
+  local is_opencode = vim.tbl_contains(get_process_names(), 'opencode')
 
   if is_reuse then
     table.insert(cmd_args, "-c")
@@ -917,7 +957,6 @@ M.setup = function(user_config)
     opts.staged_only = true
     M.send_git_diff_to_tmux(opts)
   end, {})
-
 
   -- Diagnostics commands
   vim.api.nvim_create_user_command('CodeBridgeTmuxDiagnostics', M.send_diagnostics_to_tmux, {})

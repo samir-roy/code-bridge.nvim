@@ -173,7 +173,7 @@ Configuration options: >
         -- window name to search for when target_mode = 'window_name'
         window_name = 'claude',
 
-        -- process name to search for when target_mode = 'current_window' or 'find_process'
+        -- string or list of process names to search for when target_mode = 'current_window' or 'find_process'
         process_name = 'claude',
 
         -- whether to switch to the target after sending
@@ -207,8 +207,8 @@ target_mode: How to find claude ('window_name', 'current_window', 'find_process'
 window_name: Window name to search for when using 'window_name' mode
   (default: 'claude')
 
-process_name: Process name to search for when using 'current_window' or
-  'find_process' mode
+process_name: Process name (string) or list of process names to search for
+  when using 'current_window' or 'find_process' mode
   (default: 'claude')
 
 find_node_process: Some agents like Claude Code run inside a node.js process
@@ -251,14 +251,14 @@ window >
     require('code-bridge').setup({
       tmux = {
         target_mode = 'current_window',
-        process_name = 'claude',
+        process_name = { 'claude', 'node' }, -- match multiple process names
         switch_to_target = false,  -- don't switch to claude pane after sending
         find_node_process = true,  -- agent runs inside node.js process
       }
     })
 <
 
-'find_process': Find any tmux pane running a opencode process >
+'find_process': Find any tmux pane running an opencode process >
     require('code-bridge').setup({
       tmux = {
         target_mode = 'find_process',
