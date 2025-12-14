@@ -6,7 +6,7 @@ local config = {
   tmux = {
     target_mode = 'window_name', -- 'window_name', 'current_window', 'find_process'
     window_name = 'claude',      -- window name to search for when target_mode = 'window_name'
-    process_name = 'claude',     -- string or list of process names to search for when target_mode = 'current_window' or 'find_process'
+    process_name = 'claude',     -- process name(s) to search for when target_mode = 'current_window' or 'find_process'
     switch_to_target = true,     -- whether to switch to the target after sending
     find_node_process = false,   -- whether to look for node processes with matching name
   },
@@ -770,7 +770,7 @@ M.claude_query = function(opts)
   local primary_process_name = get_process_names()[1] or config.tmux.process_name or 'claude'
   local cmd_args = { primary_process_name }
 
-  local is_opencode = vim.tbl_contains(get_process_names(), 'opencode')
+  local is_opencode = primary_process_name == 'opencode'
 
   if is_reuse then
     table.insert(cmd_args, "-c")

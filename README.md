@@ -232,7 +232,7 @@ The plugin works out of the box with no configuration required, with the followi
   tmux = {
     target_mode = 'window_name', -- 'window_name', 'current_window', 'find_process'
     window_name = 'claude',      -- window name to search for when target_mode = 'window_name'
-    process_name = 'claude',     -- string or list of process names to search for when target_mode = 'current_window' or 'find_process'
+    process_name = 'claude',     -- process name(s) to search for when target_mode = 'current_window' or 'find_process'
     switch_to_target = true,     -- whether to switch to the target after sending
     find_node_process = false,   -- whether to look for node processes with matching name
   },
@@ -283,7 +283,7 @@ require('code-bridge').setup({
 require('code-bridge').setup({
   tmux = {
     target_mode = 'current_window',
-    process_name = { 'claude', 'node' }, -- match multiple process names
+    process_name = 'claude',
     switch_to_target = false,  -- don't switch to claude pane after sending
     find_node_process = true, -- agent runs inside node.js process
   }
@@ -300,6 +300,8 @@ require('code-bridge').setup({
   }
 })
 ```
+
+Multiple process names may also be configured to target different agents by providing a list. e.g. `process_name = { 'claude', 'opencode' }`.
 
 ## Example Workflows
 

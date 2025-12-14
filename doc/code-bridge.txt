@@ -269,6 +269,9 @@ window >
     })
 <
 
+Multiple process names may also be configured to target different agents by
+providing a list. e.g. `process_name = { 'claude', 'opencode' }`.
+
 Optional key bindings: >
     -- Basic tmux commands
     vim.keymap.set("n", "<leader>ct", ":CodeBridgeTmux<CR>", 
