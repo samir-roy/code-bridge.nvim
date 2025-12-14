@@ -173,7 +173,8 @@ Configuration options: >
         -- window name to search for when target_mode = 'window_name'
         window_name = 'claude',
 
-        -- string or list of process names to search for when target_mode = 'current_window' or 'find_process'
+        -- process name or list of process names to search for
+           when target_mode = 'current_window' or 'find_process'
         process_name = 'claude',
 
         -- whether to switch to the target after sending
