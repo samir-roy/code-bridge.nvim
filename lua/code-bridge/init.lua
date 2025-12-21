@@ -548,6 +548,11 @@ local function escape_for_tmux(message)
   return nil
 end
 
+-- Check if target process is OpenCode (needs special handling for @ symbols)
+local function is_opencode_target()
+  return vim.tbl_contains(get_process_names(), 'opencode')
+end
+
 -- Send message to tmux target
 local function send_to_tmux_target(message)
   -- Check shell error and fallback to clipboard if needed
@@ -573,8 +578,25 @@ local function send_to_tmux_target(message)
     return
   end
 
+  -- For OpenCode, use paste-buffer with -p flag for bracketed paste mode
+  -- This prevents OpenCode from interpreting @ as a command trigger
+  if is_opencode_target() then
+    local temp_file = escape_for_tmux(message)
+    if temp_file then
+      -- Use -p flag for bracketed paste mode (wraps content in escape sequences)
+      local cmd = string.format(
+        'tmux load-buffer "%s" \\; paste-buffer -p -t %s \\; send-keys -t %s Enter \\; delete-buffer',
+        temp_file, target, target
+      )
+      vim.fn.system(cmd)
+      vim.fn.delete(temp_file)
+      if check_shell_error("failed to send to " .. target) then return end
+    else
+      print("failed to create temp file, copied to clipboard")
+      return
+    end
   -- For complex content (multi-line, special chars), use tmux buffer approach
-  if message:find('\n') or message:find('[\'"`$\\]') then
+  elseif message:find('\n') or message:find('[\'"`$\\]') then
     local temp_file = escape_for_tmux(message)
     if temp_file then
       -- Load message into tmux buffer, then paste it
