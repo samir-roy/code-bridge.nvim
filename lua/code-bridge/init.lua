@@ -573,24 +573,18 @@ local function send_to_tmux_target(message)
     return
   end
 
-  -- For complex content (multi-line, special chars), use tmux buffer approach
-  if message:find('\n') or message:find('[\'"`$\\]') then
-    local temp_file = escape_for_tmux(message)
-    if temp_file then
-      -- Load message into tmux buffer, then paste it
-      local cmd = string.format('tmux load-buffer "%s" \\; paste-buffer -t %s \\; delete-buffer', temp_file, target)
-      vim.fn.system(cmd)
-      -- Clean up temp file
-      vim.fn.delete(temp_file)
-      if check_shell_error("failed to send to " .. target) then return end
-    else
-      print("failed to create temp file, copied to clipboard")
-      return
-    end
-  else
-    -- Simple single-line content can use send-keys
-    vim.fn.system('tmux send-keys -t ' .. target .. ' ' .. vim.fn.shellescape(message) .. ' Enter')
+  -- Write message to temp file for loading into tmux buffer
+  local temp_file = escape_for_tmux(message)
+  if temp_file then
+    -- Load message into tmux buffer, then paste it (using bracketed paste)
+    local cmd = string.format('tmux load-buffer "%s" \\; paste-buffer -p -t %s \\; delete-buffer', temp_file, target)
+    vim.fn.system(cmd)
+    -- Clean up temp file
+    vim.fn.delete(temp_file)
     if check_shell_error("failed to send to " .. target) then return end
+  else
+    print("failed to create temp file, copied to clipboard")
+    return
   end
 
   -- Switch to target if configured
