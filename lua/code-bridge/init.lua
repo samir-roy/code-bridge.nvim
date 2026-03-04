@@ -81,7 +81,7 @@ local function build_context(opts)
   if opts.use_all_buffers then
     -- Get all loaded buffers that are files
     local buffers = {}
-    local current_file = vim.fn.expand('%')
+    local current_file = vim.fn.fnamemodify(vim.fn.expand('%:p'), ':~:.')
     for _, buf in ipairs(vim.api.nvim_list_bufs()) do
       if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].buflisted then
         local buf_name = vim.api.nvim_buf_get_name(buf)
@@ -103,7 +103,7 @@ local function build_context(opts)
     return table.concat(buffers, ' ')
   else
     -- Single file context
-    local relative_file = vim.fn.expand('%')
+    local relative_file = vim.fn.fnamemodify(vim.fn.expand('%:p'), ':~:.')
     if relative_file ~= '' then
       if opts.range == 2 then
         -- Visual mode - use the range from command
