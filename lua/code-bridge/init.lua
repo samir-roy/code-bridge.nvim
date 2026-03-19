@@ -11,11 +11,11 @@ local config = {
     find_node_process = false,   -- whether to look for node processes with matching name
   },
   interactive = {
-    use_telescope = false,       -- whether to use telescope for prompt input (if available)
+    use_telescope = false, -- whether to use telescope for prompt input (if available)
   },
   chat = {
-    model = nil,                 -- llm model to use for queries and chat (nil = default)
-    permission = nil,            -- permission flag for claude code only (nil = default or 'acceptEdits' = accept edits)
+    model = nil,      -- llm model to use for queries and chat (nil = default)
+    permission = nil, -- permission flag for claude code only (nil = default or 'acceptEdits' = accept edits)
   },
 }
 
@@ -70,10 +70,10 @@ local function matches_process(cmd)
 end
 
 local function strip_ansi(text)
-    text = text:gsub("\27%[[%d;]*m", "")        -- Remove color/formatting codes
-    text = text:gsub("\27%[[%d;]*[ABCD]", "")   -- Remove cursor movement codes
-    text = text:gsub("\27%[[%d;]*[JKH]", "")    -- Remove other escape sequences
-    return text
+  text = text:gsub("\27%[[%d;]*m", "")      -- Remove color/formatting codes
+  text = text:gsub("\27%[[%d;]*[ABCD]", "") -- Remove cursor movement codes
+  text = text:gsub("\27%[[%d;]*[JKH]", "")  -- Remove other escape sequences
+  return text
 end
 
 -- Build context string with filename and range
@@ -160,7 +160,7 @@ local function build_diagnostics_context(opts)
     if opts.severity then
       local severity_name = vim.diagnostic.severity[opts.severity]:lower()
       scope = opts.use_all_buffers and ('no ' .. severity_name .. ' diagnostics found')
-        or ('no ' .. severity_name .. ' diagnostics in current buffer')
+          or ('no ' .. severity_name .. ' diagnostics in current buffer')
     end
     return nil, scope
   end
@@ -202,7 +202,7 @@ local function build_diagnostics_context(opts)
 
     for _, diagnostic in ipairs(diagnostics) do
       local severity = vim.diagnostic.severity[diagnostic.severity]
-      local line = diagnostic.lnum + 1 -- Convert 0-indexed to 1-indexed
+      local line = diagnostic.lnum + 1                   -- Convert 0-indexed to 1-indexed
       local col = diagnostic.col + 1
       local message = diagnostic.message:gsub('\n', ' ') -- Remove newlines from message
 
@@ -599,7 +599,7 @@ local function send_to_tmux_target(message)
     -- For pane targets, get the window info first and switch to window
     if config.tmux.target_mode == 'find_process' then
       local window_info =
-        vim.fn.system('tmux list-panes -a -F "#{pane_id} #{window_id}" 2>/dev/null | grep "^' .. target .. ' "')
+          vim.fn.system('tmux list-panes -a -F "#{pane_id} #{window_id}" 2>/dev/null | grep "^' .. target .. ' "')
       if vim.v.shell_error == 0 and window_info ~= "" then
         local window_id = window_info:match("%S+%s+(%S+)")
         if window_id then
@@ -774,7 +774,7 @@ M.claude_query = function(opts)
   end
 
   if config.chat.model then
-    table.insert(cmd_args, "--model")
+    table.insert(cmd_args, is_opencode and "-m" or "--model")
     table.insert(cmd_args, config.chat.model)
   end
 
@@ -805,7 +805,13 @@ M.claude_query = function(opts)
         -- Check for errors
         local output_text = result.stdout or 'No output received'
         if result.stderr and result.stderr ~= '' then
-          output_text = (result.code ~= 0 and 'Error:\n' or '') .. result.stderr
+          if is_opencode then
+            if result.code ~= 0 then
+              output_text = output_text .. '\nError:\n' .. result.stderr
+            end
+          else
+            output_text = (result.code ~= 0 and 'Error:\n' or '') .. result.stderr
+          end
         end
 
         -- Strip ansi characters
