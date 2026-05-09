@@ -37,7 +37,7 @@ easily write detailed prompts.
 
 ## Requirements
 
-- Neovim 0.7+
+- Neovim 0.11+
 - Claude Code or Opencode installed and configured
 - tmux (optional)
 
