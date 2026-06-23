@@ -192,6 +192,7 @@ The plugin will:
 2. Find the claude target based on your configuration:
    - **window_name**: Look for a window named "claude"
    - **current_window**: Search for claude process in current window only
+   - **current_session**: Search for claude process across all windows in the current session
    - **find_process**: Search all panes across all windows for claude process
 3. Send the context and optionally switch to the target
 4. Fall back to clipboard if tmux is unavailable or target not found
@@ -230,9 +231,9 @@ The plugin works out of the box with no configuration required, with the followi
 ```
 {
   tmux = {
-    target_mode = 'window_name', -- 'window_name', 'current_window', 'find_process'
+    target_mode = 'window_name', -- 'window_name', 'current_window', 'current_session', 'find_process'
     window_name = 'claude',      -- window name to search for when target_mode = 'window_name'
-    process_name = 'claude',     -- process name(s) to search for when target_mode = 'current_window' or 'find_process'
+    process_name = 'claude',     -- process name(s) to search for when target_mode = 'current_window', 'current_session' or 'find_process'
     switch_to_target = true,     -- whether to switch to the target after sending
     find_node_process = false,   -- whether to look for node processes with matching name
   },
@@ -248,9 +249,9 @@ The plugin works out of the box with no configuration required, with the followi
 
 ### Tmux options
 
-- `target_mode`: How to find claude (`'window_name'`, `'current_window'`, `'find_process'`) (default: `'window_name'`)
+- `target_mode`: How to find claude (`'window_name'`, `'current_window'`, `'current_session'`, `'find_process'`) (default: `'window_name'`)
 - `window_name`: Window name to search for when using `'window_name'` mode (default: `'claude'`)
-- `process_name`: Process name (string) or list of process names to search for when using `'current_window'` or `'find_process'` mode (default: `'claude'`)
+- `process_name`: Process name (string) or list of process names to search for when using `'current_window'`, `'current_session'` or `'find_process'` mode (default: `'claude'`)
 - `find_node_process`: Some agents like Claude Code run inside a node.js process so enabling this will look for the
   `'process_name'` in the command of node processes (default: `false`)
 - `switch_to_target`: Whether to switch to the target after sending context (default: `true`)
@@ -285,6 +286,18 @@ require('code-bridge').setup({
     target_mode = 'current_window',
     process_name = 'claude',
     switch_to_target = false,  -- don't switch to claude pane after sending
+    find_node_process = true, -- agent runs inside node.js process
+  }
+})
+```
+
+**`'current_session'`**: Search for pane with claude process across all windows in the current tmux session
+```lua
+require('code-bridge').setup({
+  tmux = {
+    target_mode = 'current_session',
+    process_name = 'claude',
+    switch_to_target = true,  -- switch to claude pane after sending
     find_node_process = true, -- agent runs inside node.js process
   }
 })
