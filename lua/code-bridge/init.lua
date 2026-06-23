@@ -6,7 +6,7 @@ local config = {
   tmux = {
     target_mode = 'window_name', -- 'window_name', 'current_window', 'current_session', 'find_process'
     window_name = 'claude',      -- window name to search for when target_mode = 'window_name'
-    process_name = 'claude',     -- process name(s) to search for when target_mode = 'current_window', 'current_session' or 'find_process'
+    process_name = 'claude',     -- process name(s) to search for when target_mode is not window_name
     switch_to_target = true,     -- whether to switch to the target after sending
     find_node_process = false,   -- whether to look for node processes with matching name
   },
@@ -17,6 +17,12 @@ local config = {
     model = nil,      -- llm model to use for queries and chat (nil = default)
     permission = nil, -- permission flag for claude code only (nil = default or 'acceptEdits' = accept edits)
   },
+}
+
+-- Flag to use for list panes based on target mode
+local list_pane_flags = {
+  current_session = '-s',
+  find_process = '-a',
 }
 
 -- Track the chat buffer and window during the session
@@ -352,46 +358,7 @@ end
 
 -- Find tmux target based on configuration
 local function find_tmux_target()
-  if config.tmux.target_mode == 'current_window' then
-    -- Find pane with agent process in current window only
-    local panes_info = vim.fn.system('tmux list-panes -F "#{pane_id} #{pane_current_command}" 2>/dev/null')
-    if vim.v.shell_error ~= 0 then
-      return nil, "not in tmux session"
-    end
-
-    local pane_id = find_pane_with_process(panes_info)
-    if pane_id then
-      return pane_id, nil
-    end
-
-    return nil, "no pane running " .. process_name_label() .. " in current window"
-  elseif config.tmux.target_mode == 'current_session' then
-    -- Find pane with agent process in current session only
-    local panes_info = vim.fn.system('tmux list-panes -s -F "#{pane_id} #{pane_current_command}" 2>/dev/null')
-    if vim.v.shell_error ~= 0 then
-      return nil, "not in tmux session"
-    end
-
-    local pane_id = find_pane_with_process(panes_info)
-    if pane_id then
-      return pane_id, nil
-    end
-
-    return nil, "no pane running " .. process_name_label() .. " in current session"
-  elseif config.tmux.target_mode == 'find_process' then
-    -- Find pane with agent process
-    local panes_info = vim.fn.system('tmux list-panes -a -F "#{pane_id} #{pane_current_command}" 2>/dev/null')
-    if vim.v.shell_error ~= 0 then
-      return nil, "not in tmux session"
-    end
-
-    local pane_id = find_pane_with_process(panes_info)
-    if pane_id then
-      return pane_id, nil
-    end
-
-    return nil, "no pane running " .. process_name_label()
-  else -- 'window_name' (default)
+  if config.tmux.target_mode == 'window_name' then
     -- Check if agent window exists
     vim.fn.system('tmux list-windows -F "#{window_name}" 2>/dev/null | grep -x ' .. config.tmux.window_name)
     if vim.v.shell_error == 0 then
@@ -400,6 +367,20 @@ local function find_tmux_target()
       return nil, "no window named '" .. config.tmux.window_name .. "'"
     end
   end
+
+  -- Find pane with agent process
+  local flag = list_pane_flags[config.tmux.target_mode] or ''
+  local panes_info = vim.fn.system('tmux list-panes ' .. flag .. ' -F "#{pane_id} #{pane_current_command}" 2>/dev/null')
+  if vim.v.shell_error ~= 0 then
+    return nil, "not in tmux session"
+  end
+
+  local pane_id = find_pane_with_process(panes_info)
+  if pane_id then
+    return pane_id, nil
+  end
+
+  return nil, "no pane found running " .. process_name_label()
 end
 
 -- Create interactive prompt input
@@ -611,9 +592,14 @@ local function send_to_tmux_target(message)
 
     -- For pane targets, get the window info first and switch to window
     if config.tmux.target_mode == 'find_process' or config.tmux.target_mode == 'current_session' then
-      local list_flag = config.tmux.target_mode == 'current_session' and '-s' or '-a'
-      local window_info =
-          vim.fn.system('tmux list-panes ' .. list_flag .. ' -F "#{pane_id} #{window_id}" 2>/dev/null | grep "^' .. target .. ' "')
+      local list_flag = list_pane_flags[config.tmux.target_mode] or ''
+      local window_info = vim.fn.system(
+        'tmux list-panes ' ..
+        list_flag ..
+        ' -F "#{pane_id} #{window_id}" 2>/dev/null | grep "^' ..
+        target ..
+        ' "'
+      )
       if vim.v.shell_error == 0 and window_info ~= "" then
         local window_id = window_info:match("%S+%s+(%S+)")
         if window_id then

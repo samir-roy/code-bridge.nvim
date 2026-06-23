@@ -233,7 +233,8 @@ The plugin works out of the box with no configuration required, with the followi
   tmux = {
     target_mode = 'window_name', -- 'window_name', 'current_window', 'current_session', 'find_process'
     window_name = 'claude',      -- window name to search for when target_mode = 'window_name'
-    process_name = 'claude',     -- process name(s) to search for when target_mode = 'current_window', 'current_session' or 'find_process'
+    process_name = 'claude',     -- process name(s) to search for when target_mode is
+                                    'current_window', 'current_session' or 'find_process'
     switch_to_target = true,     -- whether to switch to the target after sending
     find_node_process = false,   -- whether to look for node processes with matching name
   },
@@ -249,10 +250,15 @@ The plugin works out of the box with no configuration required, with the followi
 
 ### Tmux options
 
-- `target_mode`: How to find claude (`'window_name'`, `'current_window'`, `'current_session'`, `'find_process'`) (default: `'window_name'`)
+- `target_mode`: How to find claude (default: `'window_name'`)
+    - `'window_name'`: find a tmux window matching the specified window name
+    - `'current_window'`: find a process in the current tmux window matching the process name
+    - `'current_session'`: find a process in the current tmux session matching the process name
+    - `'find_process'`: find a process in any tmux window or session matching the process name
 - `window_name`: Window name to search for when using `'window_name'` mode (default: `'claude'`)
-- `process_name`: Process name (string) or list of process names to search for when using `'current_window'`, `'current_session'` or `'find_process'` mode (default: `'claude'`)
-- `find_node_process`: Some agents like Claude Code run inside a node.js process so enabling this will look for the
+- `process_name`: Process name (string) or list of process names to search for when using `'current_window'`,
+  `'current_session'` or `'find_process'` mode (default: `'claude'`)
+- `find_node_process`: In case the agent runs inside a node.js process, enabling this will look for the
   `'process_name'` in the command of node processes (default: `false`)
 - `switch_to_target`: Whether to switch to the target after sending context (default: `true`)
 
@@ -314,7 +320,8 @@ require('code-bridge').setup({
 })
 ```
 
-Multiple process names may also be configured to target different agents by providing a list. e.g. `process_name = { 'claude', 'opencode' }`.
+Multiple process names may also be configured to target different agents by providing a list.
+e.g. `process_name = { 'claude', 'opencode' }`.
 
 ## Example Workflows
 
