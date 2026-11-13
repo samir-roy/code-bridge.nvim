@@ -11,22 +11,21 @@ M.check = function()
     vim.health.warn("tmux not found in PATH", "Install tmux to use CodeBridgeTmux functionality")
   end
 
-  -- Check claude CLI
-  vim.fn.system('command -v claude 2>/dev/null')
+  -- Check chat CLI (first configured process name, default claude)
+  local cli = require('code-bridge').chat_cli()
+  vim.fn.system('command -v ' .. vim.fn.shellescape(cli) .. ' 2>/dev/null')
   if vim.v.shell_error == 0 then
-    vim.health.ok("claude CLI is available")
+    vim.health.ok(cli .. " CLI is available")
 
-    -- Check claude CLI version
-    local version_result = vim.fn.system('claude --version 2>/dev/null')
+    local version_result = vim.fn.system(vim.fn.shellescape(cli) .. ' --version 2>/dev/null')
     if vim.v.shell_error == 0 then
-      local version = vim.trim(version_result)
-      vim.health.ok("claude version: " .. version)
+      vim.health.ok(cli .. " version: " .. vim.trim(version_result))
     else
-      vim.health.error("could not get claude version")
+      vim.health.error("could not get " .. cli .. " version")
     end
   else
-    vim.health.error("claude CLI not found in PATH",
-      "Install claude CLI to use CodeBridgeQuery and CodeBridgeChat functionality")
+    vim.health.error(cli .. " CLI not found in PATH",
+      "Install " .. cli .. " to use CodeBridgeQuery and CodeBridgeChat functionality")
   end
 
   -- Check clipboard functionality

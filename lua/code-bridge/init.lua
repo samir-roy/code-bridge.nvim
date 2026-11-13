@@ -16,6 +16,7 @@ local config = {
   chat = {
     model = nil,      -- llm model to use for queries and chat (nil = default)
     permission = nil, -- permission flag for claude code only (nil = default or 'acceptEdits' = accept edits)
+    pi_no_session = false, -- pi only: do not save a session; follow-ups have no memory
   },
 }
 
@@ -29,6 +30,7 @@ local list_pane_flags = {
 local chat_buffer = nil
 local chat_window = nil
 local running_process = nil
+local chat_session_id = nil -- pi session id, one per chat buffer
 
 -- Track the prompt popup state during the session
 local prompt_buffer = nil
@@ -655,6 +657,45 @@ M.send_recent_files_to_tmux = function(opts)
   send_to_tmux_wrapper(opts, context, error_msg)
 end
 
+-- Name of the CLI used for chat (first configured process name)
+M.chat_cli = function()
+  return get_process_names()[1] or config.tmux.process_name or 'claude'
+end
+
+-- Build the chat CLI command for claude, opencode or pi
+local function build_chat_cmd(cli, is_reuse, message)
+  local is_opencode = cli == 'opencode'
+  local is_pi = cli == 'pi'
+  local cmd_args = { cli }
+
+  if is_pi then
+    if config.chat.pi_no_session then
+      table.insert(cmd_args, '--no-session')
+    else
+      chat_session_id = chat_session_id or string.format('code-bridge-%d-%d', os.time(), math.random(100000, 999999))
+      vim.list_extend(cmd_args, { '--session-id', chat_session_id })
+    end
+  elseif is_reuse then
+    table.insert(cmd_args, '-c')
+    if is_opencode then
+      table.insert(cmd_args, 'true')
+    end
+  end
+
+  if config.chat.model then
+    table.insert(cmd_args, (is_opencode and '-m') or '--model')
+    table.insert(cmd_args, config.chat.model)
+  end
+
+  if config.chat.permission and not is_pi then
+    vim.list_extend(cmd_args, { '--permission-mode', config.chat.permission })
+  end
+
+  table.insert(cmd_args, is_opencode and 'run' or '-p')
+  table.insert(cmd_args, message)
+  return cmd_args
+end
+
 -- Query Claude Code using its CLI option and show results in chat pane
 M.claude_query = function(opts)
   if vim.b.is_code_bridge_buffer == true then
@@ -735,6 +776,7 @@ M.claude_query = function(opts)
         end
         chat_buffer = nil
         chat_window = nil
+        chat_session_id = nil
       end
     })
   end
@@ -761,30 +803,10 @@ M.claude_query = function(opts)
   vim.api.nvim_set_current_win(original_win)
 
   -- Set command based on new or existing chat and config
-  local primary_process_name = get_process_names()[1] or config.tmux.process_name or 'claude'
-  local cmd_args = { primary_process_name }
-
+  local primary_process_name = M.chat_cli()
   local is_opencode = primary_process_name == 'opencode'
-
-  if is_reuse then
-    table.insert(cmd_args, "-c")
-    if is_opencode then
-      table.insert(cmd_args, "true")
-    end
-  end
-
-  if config.chat.model then
-    table.insert(cmd_args, is_opencode and "-m" or "--model")
-    table.insert(cmd_args, config.chat.model)
-  end
-
-  if config.chat.permission then
-    table.insert(cmd_args, "--permission-mode")
-    table.insert(cmd_args, config.chat.permission)
-  end
-
-  table.insert(cmd_args, is_opencode and "run" or "-p")
-  table.insert(cmd_args, full_message)
+  local quiet_stderr_on_success = is_opencode or primary_process_name == 'pi'
+  local cmd_args = build_chat_cmd(primary_process_name, is_reuse, full_message)
 
   -- Execute the command asynchronously
   running_process = vim.system(cmd_args, {}, function(result)
@@ -805,7 +827,7 @@ M.claude_query = function(opts)
         -- Check for errors
         local output_text = result.stdout or 'No output received'
         if result.stderr and result.stderr ~= '' then
-          if is_opencode then
+          if quiet_stderr_on_success then
             if result.code ~= 0 then
               output_text = output_text .. '\nError:\n' .. result.stderr
             end
