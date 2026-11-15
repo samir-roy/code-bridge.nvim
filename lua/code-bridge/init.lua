@@ -692,6 +692,10 @@ local function build_chat_cmd(cli, is_reuse, message)
   end
 
   table.insert(cmd_args, is_opencode and 'run' or '-p')
+  -- pi treats arguments starting with '@' as file attachments, so prefix plain text.
+  if is_pi and message:sub(1, 1) == '@' then
+    message = 'Context: ' .. message
+  end
   table.insert(cmd_args, message)
   return cmd_args
 end
