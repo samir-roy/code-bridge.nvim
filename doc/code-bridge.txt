@@ -25,7 +25,7 @@ buffers.
 REQUIREMENTS                                          *code-bridge-requirements*
 
 - Neovim 0.11+
-- Claude Code or Opencode installed and configured
+- Claude Code, Opencode or Pi installed and configured
 - tmux (optional)
 
 ==============================================================================
@@ -197,6 +197,9 @@ Configuration options: >
 
         -- permission flag for claude code only (nil = default or 'acceptEdits' = accept edits)
         permission = nil,
+
+        -- pi only: do not save a session (follow-ups have no memory)
+        pi_no_session = false,
       },
     })
 <
@@ -237,6 +240,11 @@ model: Specific LLM model to use for queries and chat
 
 permission: Permission flag for use with Claude Code only
   ('acceptEdits' or nil) (default: nil)
+
+pi_no_session: Pi only. When true, chat runs `pi --no-session`: nothing is
+  saved, and follow-up questions do not know earlier turns. When false, each
+  chat buffer uses its own Pi session. (default: false)
+  Pi is used for chat when it is the first `process_name`.
 
                                                       *code-bridge-config-examples*
 Configuration Examples:

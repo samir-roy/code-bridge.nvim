@@ -38,7 +38,7 @@ easily write detailed prompts.
 ## Requirements
 
 - Neovim 0.11+
-- Claude Code or Opencode installed and configured
+- Claude Code, Opencode or Pi installed and configured
 - tmux (optional)
 
 
@@ -244,6 +244,7 @@ The plugin works out of the box with no configuration required, with the followi
   chat = {
     model = nil,                 -- llm model to use for queries and chat (nil = default)
     permission = nil,            -- permission flag for claude code only (nil = default or 'acceptEdits' = accept edits)
+    pi_no_session = false,       -- pi only: do not save a session; follow-ups have no memory
   },
 }
 ```
@@ -270,6 +271,9 @@ The plugin works out of the box with no configuration required, with the followi
 
 - `model`: Specific LLM model to use for queries and chat (e.g. `'claude-haiku-4-5'`) (default: `nil`)
 - `permission`: Permission flag for use with Claude Code only (`'acceptEdits'` or `nil`) (default: `nil`)
+- `pi_no_session`: Pi only. When `true`, chat runs `pi --no-session`: nothing is saved and follow-ups do not know earlier
+  turns. When `false`, each chat buffer uses its own Pi session (default: `false`). Pi is used for chat when it is the
+  first `process_name`.
 
 ### Examples
 
